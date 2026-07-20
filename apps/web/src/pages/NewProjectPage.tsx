@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { api } from '../api/client';
 import { NavigationGuard } from '../components/NavigationGuard';
 import { GitHubIcon } from '../components/GitHubIcon';
+import { GitHubRepositoryPicker, githubRepositoryKey } from '../components/GitHubRepositoryPicker';
 import { ProjectAnalysisCard, type ProjectAnalysisStatus } from '../components/ProjectAnalysisCard';
 import { ProjectEnvironmentSetup } from '../components/ProjectEnvironmentSetup';
 import { StaticBasePathControl } from '../components/StaticBasePathControl';
@@ -123,10 +124,6 @@ function projectNameFromRepository(repository: string) {
   return repository.trim().replace(/\/$/, '').split('/').pop()?.replace(/\.git$/i, '') ?? '';
 }
 
-function githubRepositoryKey(installationId: string | number, repositoryId: string | number) {
-  return `${installationId}:${repositoryId}`;
-}
-
 function configPayload(config: BuildConfig) {
   return {
     name: config.name.trim(),
@@ -203,7 +200,6 @@ export function NewProjectPage() {
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [branch, setBranch] = useState('main');
   const [selectedRepositoryKey, setSelectedRepositoryKey] = useState('');
-  const [repositorySearch, setRepositorySearch] = useState('');
   const [autoDeploy, setAutoDeploy] = useState(true);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [folderFiles, setFolderFiles] = useState<File[]>([]);
@@ -233,8 +229,8 @@ export function NewProjectPage() {
     retry: false,
     staleTime: 60_000,
   });
-  const selectedRepository = githubRepositories.data?.find((repository) => (
-    githubRepositoryKey(repository.installationId, repository.id) === selectedRepositoryKey
+  const selectedRepository = githubRepositories.data?.repositories.find((repository) => (
+    githubRepositoryKey(repository) === selectedRepositoryKey
   ));
   const githubBranches = useQuery({
     queryKey: ['github-branches', selectedRepository?.installationId, selectedRepository?.id],
@@ -659,17 +655,6 @@ export function NewProjectPage() {
       && isLikelyFileStorageFolder(folderFiles)
     )
   ), [config.buildType, folderFiles, selectedApplication?.rendering, sourceMode, uploadKind]);
-  const filteredRepositories = useMemo(() => {
-    const needle = repositorySearch.trim().toLowerCase();
-    if (!needle) return githubRepositories.data ?? [];
-    const matches = (githubRepositories.data ?? []).filter((repository) => (
-      repository.fullName.toLowerCase().includes(needle)
-      || repository.owner.toLowerCase().includes(needle)
-    ));
-    return selectedRepository && !matches.some((repository) => repository.id === selectedRepository.id)
-      ? [selectedRepository, ...matches]
-      : matches;
-  }, [githubRepositories.data, repositorySearch, selectedRepository]);
   const staticPathSupported = config.buildType !== 'node'
     && config.buildType !== 'dockerfile';
 
@@ -1063,13 +1048,13 @@ export function NewProjectPage() {
                             <span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-muted/30"><GitHubIcon className="size-4" aria-hidden="true" /></span>
                             <div className="min-w-0">
                               <strong className="block text-sm font-medium">{t('Select repository', 'Repository auswählen')}</strong>
-                              <span className="mt-0.5 block text-xs text-muted-foreground">{t('{count} available', '{count} verfügbar', { count: githubRepositories.data?.length ?? 0 })}</span>
+                              <span className="mt-0.5 block text-xs text-muted-foreground">{t('{count} available', '{count} verfügbar', { count: githubRepositories.data?.repositories.length ?? 0 })}</span>
                             </div>
                           </div>
                           <Badge variant="outline">GitHub App</Badge>
                         </div>
                         <div className="grid gap-5 p-4 sm:p-5">
-                          {(githubRepositories.data?.length ?? 0) === 0 && (
+                          {(githubRepositories.data?.repositories.length ?? 0) === 0 && (
                             <Alert>
                               <GitHubIcon aria-hidden="true" />
                               <AlertTitle>{t('No repositories shared', 'Keine Repositories freigegeben')}</AlertTitle>
@@ -1079,44 +1064,19 @@ export function NewProjectPage() {
                               </AlertDescription>
                             </Alert>
                           )}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <Field
-                              id="github-repository-search"
-                              label={t('Search repositories', 'Repositories durchsuchen')}
-                              value={repositorySearch}
-                              onChange={(event) => setRepositorySearch(event.target.value)}
-                              placeholder={t('Organization or repository', 'Organisation oder Repository')}
-                              disabled={createProject.isPending}
-                            />
-                            <SelectField
-                              id="github-repository"
-                              label="Repository"
+                          {githubRepositories.data && (
+                            <GitHubRepositoryPicker
+                              catalog={githubRepositories.data}
                               value={selectedRepositoryKey}
-                              onChange={(event) => {
-                                const nextKey = event.target.value;
-                                const repository = githubRepositories.data?.find((candidate) => (
-                                  githubRepositoryKey(candidate.installationId, candidate.id) === nextKey
-                                ));
+                              onValueChange={(repository) => {
                                 resetGitAnalysis();
-                                setSelectedRepositoryKey(nextKey);
-                                if (repository) {
-                                  setBranch(repository.defaultBranch || 'main');
-                                  if (!projectNameManuallyEdited.current) updateConfig('name', repository.name.replace(/[-_]+/g, ' '), false);
-                                }
+                                setSelectedRepositoryKey(githubRepositoryKey(repository));
+                                setBranch(repository.defaultBranch || 'main');
+                                if (!projectNameManuallyEdited.current) updateConfig('name', repository.name.replace(/[-_]+/g, ' '), false);
                               }}
                               error={submitAttempted ? validationErrors.githubRepository : undefined}
-                              disabled={createProject.isPending || filteredRepositories.length === 0}
-                            >
-                              <option value="">{t('Select repository', 'Repository auswählen')}</option>
-                              {filteredRepositories.map((repository) => (
-                                <option key={githubRepositoryKey(repository.installationId, repository.id)} value={githubRepositoryKey(repository.installationId, repository.id)}>
-                                  {repository.fullName}{repository.private ? ` · ${t('private', 'privat')}` : ''}
-                                </option>
-                              ))}
-                            </SelectField>
-                          </div>
-                          {repositorySearch.trim() && filteredRepositories.length === 0 && (githubRepositories.data?.length ?? 0) > 0 && (
-                            <p className="text-xs text-muted-foreground">{t('No repositories found for “{query}”.', 'Keine Repositories für „{query}“ gefunden.', { query: repositorySearch.trim() })}</p>
+                              disabled={createProject.isPending || githubRepositories.data.repositories.length === 0}
+                            />
                           )}
 
                           {githubBranches.isError ? (

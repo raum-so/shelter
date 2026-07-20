@@ -55,6 +55,7 @@ const APP_METADATA_KEY = "github.app_metadata";
 const PRIVATE_KEY_KEY = "github.private_key";
 const WEBHOOK_SECRET_KEY = "github.webhook_secret";
 const SETUP_STATE_HASH_KEY = "github.setup_state_hash";
+const TRUSTED_INSTALLATIONS_KEY = "github.trusted_installations";
 
 const AppMetadataSchema = z.object({
   version: z.literal(1),
@@ -75,6 +76,8 @@ const AppUpgradeCandidateSchema = z.object({
 }).strict();
 
 type AppUpgradeCandidate = z.infer<typeof AppUpgradeCandidateSchema>;
+
+const TrustedInstallationsSchema = z.array(z.string().regex(/^\d{1,20}$/)).max(1_000);
 
 interface RetiredWebhookSource {
   appId: string;
@@ -142,6 +145,7 @@ const InstallationTokenSchema = z.object({
 
 const AppCapabilitySchema = z.object({
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]{0,99}$/),
+  public: z.boolean().optional().default(false),
   owner: z.object({
     login: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?$/),
     type: z.enum(["User", "Organization", "Enterprise"])
@@ -230,7 +234,7 @@ export interface GitHubManifest {
   hook_attributes: { url: string; active: true };
   redirect_url: string;
   setup_url: string;
-  public: false;
+  public: true;
   request_oauth_on_install: false;
   setup_on_update: true;
   default_permissions: { contents: "read"; statuses: "write"; metadata: "read"; pull_requests: "read" };
@@ -287,6 +291,7 @@ export interface GitHubPreviewCapability {
   installationPullRequestsPermission: boolean | null;
   installationPullRequestEvent: boolean | null;
   installationSuspended: boolean | null;
+  organizationAccess: boolean;
   remediation: "none" | "configure_app" | "update_existing_app" | "approve_installation_update";
   remediationUrl: string | null;
   upgradePending: boolean;
@@ -369,6 +374,7 @@ export class GitHubService {
         installationPullRequestsPermission: installationId ? false : null,
         installationPullRequestEvent: installationId ? false : null,
         installationSuspended: null,
+        organizationAccess: false,
         remediation: "configure_app",
         remediationUrl: null,
         ...upgrade
@@ -403,6 +409,7 @@ export class GitHubService {
         installationPullRequestsPermission,
         installationPullRequestEvent,
         installationSuspended,
+        organizationAccess: app.public,
         remediation: !appReady ? "update_existing_app" : installationReady ? "none" : "approve_installation_update",
         remediationUrl: !appReady
           ? appRemediationUrl
@@ -421,6 +428,7 @@ export class GitHubService {
       installationPullRequestsPermission: null,
       installationPullRequestEvent: null,
       installationSuspended: null,
+      organizationAccess: app.public,
       remediation: pullRequestsPermission && pullRequestEvent ? "none" : "update_existing_app",
       remediationUrl: pullRequestsPermission && pullRequestEvent ? null : appRemediationUrl,
       ...upgrade
@@ -618,6 +626,7 @@ export class GitHubService {
     if (String(installation.app_id) !== metadata.appId) {
       throw conflict("Die Installation gehört nicht zu dieser GitHub App", "GITHUB_INSTALLATION_MISMATCH");
     }
+    this.trustInstallation(String(installation.id));
     this.invalidateInstallationTokens(String(installation.id));
     return "installed";
   }
@@ -713,6 +722,12 @@ export class GitHubService {
       throw conflict(
         "Die neue GitHub App gehört nicht zum erwarteten Account",
         "GITHUB_UPGRADE_OWNER_MISMATCH"
+      );
+    }
+    if (!candidateApp.public) {
+      throw conflict(
+        "Die neue GitHub App muss für weitere Accounts und Organisationen installierbar sein",
+        "GITHUB_UPGRADE_APP_VISIBILITY"
       );
     }
     this.requirePreviewCapabilities(candidateApp.permissions, candidateApp.events, "GITHUB_UPGRADE_APP_CAPABILITIES");
@@ -836,6 +851,7 @@ export class GitHubService {
         WEBHOOK_SECRET_KEY,
         this.encryptSecret("github.webhook_secret:v1", candidate.webhookSecret)
       );
+      this.database.setSetting(TRUSTED_INSTALLATIONS_KEY, JSON.stringify([normalizedInstallationId]));
       if (previousInstallation) {
         this.database.retargetGithubRetiredWebhookSources(
           previousInstallation.id,
@@ -863,7 +879,8 @@ export class GitHubService {
         APP_METADATA_KEY,
         PRIVATE_KEY_KEY,
         WEBHOOK_SECRET_KEY,
-        SETUP_STATE_HASH_KEY
+        SETUP_STATE_HASH_KEY,
+        TRUSTED_INSTALLATIONS_KEY
       ]) {
         this.database.deleteSetting(key);
       }
@@ -884,6 +901,7 @@ export class GitHubService {
 
   async installations(): Promise<GitHubInstallation[]> {
     const rows = await this.paginate<unknown>("/app/installations", { appAuthentication: true });
+    const trusted = this.trustedInstallationIds();
     return rows.map((row) => {
       const parsed = this.parseUpstream(InstallationSchema, row);
       return {
@@ -895,7 +913,7 @@ export class GitHubService {
         suspendedAt: parsed.suspended_at ?? null,
         htmlUrl: this.installationSettingsUrl(parsed)
       };
-    });
+    }).filter((installation) => !trusted || trusted.has(installation.id));
   }
 
   async repositories(): Promise<{ installations: GitHubInstallation[]; repositories: GitHubRepository[] }> {
@@ -1748,7 +1766,7 @@ export class GitHubService {
       hook_attributes: { url: `${origin}/api/webhooks/github`, active: true },
       redirect_url: callbackUrl,
       setup_url: `${origin}${GITHUB_SETUP_CALLBACK_PATH}?state=${encodeURIComponent(setupState)}`,
-      public: false,
+      public: true,
       request_oauth_on_install: false,
       setup_on_update: true,
       default_permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
@@ -2081,6 +2099,26 @@ export class GitHubService {
     const [owner, repository, extra] = fullName.split("/");
     if (!owner || !repository || extra) throw new HttpError(400, "GITHUB_REPOSITORY_INVALID", "GitHub-Repository ist ungültig");
     return `${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`;
+  }
+
+  private trustedInstallationIds(): Set<string> | null {
+    const raw = this.database.getSetting(TRUSTED_INSTALLATIONS_KEY);
+    if (!raw) return null;
+    try {
+      return new Set(TrustedInstallationsSchema.parse(JSON.parse(raw)));
+    } catch {
+      throw upstreamError(
+        "Die Liste der freigegebenen GitHub-Installationen ist beschädigt",
+        "GITHUB_CONFIGURATION_INVALID"
+      );
+    }
+  }
+
+  private trustInstallation(installationId: string): void {
+    const normalized = this.installationId(installationId);
+    const trusted = this.trustedInstallationIds() ?? new Set<string>();
+    trusted.add(normalized);
+    this.database.setSetting(TRUSTED_INSTALLATIONS_KEY, JSON.stringify([...trusted].sort()));
   }
 
   private installationId(value: string): string {
