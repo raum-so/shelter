@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/yauzl": "^3.4.0",
     "fflate": "^0.8.2",
     "pino-pretty": "^13.1.3",
