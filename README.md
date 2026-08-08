@@ -387,6 +387,8 @@ Variables are encrypted under `APP_SECRET` at rest. Saved values are not returne
 
 During GitHub, ZIP, and folder setup, Shelter detects bounded static references such as `process.env.KEY`, `import.meta.env.KEY`, Deno/Bun environment access, explicit example files, and common Zod/`createEnv` declarations. The setup separates required values from suggestions, server-only secrets from public client variables, and build-time from runtime use. High-confidence required values are requested before the first deployment, every finding links back to its source path and line, and a suspected false positive can be explicitly skipped. Dynamic lookups remain advisory and may need to be added manually.
 
+The project setup, production environment, and pull-request preview environment can also import pasted `.env` content. Parsing happens locally in the browser, supports comments, `export`, quoted values, and multiline quoted values, and never evaluates variable expansion or repository code. The import preview exposes key names only; matching form entries are replaced while unrelated variables remain unchanged. Nothing is persisted until the operator explicitly saves the surrounding form.
+
 Builds run through Shelter's dedicated `docker-container` BuildKit builder rather than the unbounded default builder. The builder enforces configured memory, swap, CPU, PID, and maximum-parallelism limits and applies a cache-GC target; supported Buildx versions also receive the same per-build resource limits. Shelter checks free space throughout source preparation and the build, cancels cancellable work, and refuses completion below `BUILD_MIN_FREE_GB`.
 
 File-storage runtimes never receive project environment variables because they do not execute application code.
