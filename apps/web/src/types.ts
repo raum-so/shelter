@@ -160,6 +160,7 @@ export interface GitHubPreviewCapability {
   installationPullRequestsPermission?: boolean;
   installationPullRequestEvent?: boolean;
   installationSuspended?: boolean;
+  organizationAccess?: boolean;
   remediation: 'none' | 'configure_app' | 'update_existing_app' | 'approve_installation_update';
   remediationUrl?: string | null;
   upgradePending: boolean;
@@ -178,6 +179,11 @@ export interface GitHubRepository {
   htmlUrl: string;
   cloneUrl: string;
   updatedAt?: string;
+}
+
+export interface GitHubRepositoryCatalog {
+  installations: GitHubInstallation[];
+  repositories: GitHubRepository[];
 }
 
 export interface GitHubBranch {

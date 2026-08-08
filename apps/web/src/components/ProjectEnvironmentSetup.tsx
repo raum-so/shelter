@@ -1,4 +1,5 @@
 import { ExternalLink, FileSearch, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ProjectEnvironmentRequirement } from '../types';
 import { useI18n } from '../i18n';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
@@ -34,6 +35,7 @@ interface ProjectEnvironmentSetupProps {
   disabled?: boolean;
   onChange: (key: string, value: string) => void;
   onSkippedChange?: (key: string, skipped: boolean) => void;
+  action?: ReactNode;
   className?: string;
 }
 
@@ -52,6 +54,7 @@ export function ProjectEnvironmentSetup({
   disabled = false,
   onChange,
   onSkippedChange,
+  action,
   className,
 }: ProjectEnvironmentSetupProps) {
   const { t } = useI18n();
@@ -81,13 +84,16 @@ export function ProjectEnvironmentSetup({
             </CardDescription>
           </div>
         </div>
-        <Badge variant={unresolvedCount > 0 ? 'default' : 'secondary'} className="w-fit shrink-0">
-          {requiredCount === 0
-            ? t('{count} suggested', '{count} vorgeschlagen', { count: requirements.length })
-            : unresolvedCount > 0
-              ? t('{count} required', '{count} erforderlich', { count: unresolvedCount })
-              : t('Ready', 'Bereit')}
-        </Badge>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {action}
+          <Badge variant={unresolvedCount > 0 ? 'default' : 'secondary'} className="w-fit shrink-0">
+            {requiredCount === 0
+              ? t('{count} suggested', '{count} vorgeschlagen', { count: requirements.length })
+              : unresolvedCount > 0
+                ? t('{count} required', '{count} erforderlich', { count: unresolvedCount })
+                : t('Ready', 'Bereit')}
+          </Badge>
+        </div>
       </CardHeader>
 
       <CardContent className="grid gap-3 px-4 py-4 sm:px-5 sm:py-5">

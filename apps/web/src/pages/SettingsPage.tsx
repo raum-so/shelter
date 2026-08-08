@@ -42,10 +42,13 @@ import { Separator } from '@/components/ui/separator';
 import { NavigationGuard } from '../components/NavigationGuard';
 import { GitHubIcon } from '../components/GitHubIcon';
 import { GitHubPreviewCapabilityNotice } from '../components/GitHubPreviewCapabilityNotice';
+import { useGitHubUpgradeManifest } from '../hooks/useGitHubUpgradeManifest';
 import { CloudflareAccessProtectionCard } from '../components/CloudflareAccessProtectionCard';
 import {
   githubPreviewCapabilityStatus,
   shouldRefetchGitHubPreviewCapability,
+  trustedGitHubAppInstallationUrl,
+  trustedGitHubRemediationUrl,
   trustedGitHubAppUrl,
 } from '../utils/github';
 import { githubCallbackNotice } from '../utils/github-callback';
@@ -191,6 +194,7 @@ function InlineNotice({
 export function SettingsPage({ section }: { section: SettingsSection }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const githubUpgrade = useGitHubUpgradeManifest();
   const accessProtectionErrorMessage = (error: unknown) => {
     const code = error instanceof ApiError && error.details && typeof error.details === 'object'
       ? (error.details as { code?: unknown }).code
@@ -666,6 +670,8 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     const githubInstallUrl = trustedGitHubAppUrl(github?.installUrl);
     const previewCapabilityStatus = githubPreviewCapabilityStatus(github?.previewCapability);
     const previewCapabilityNeedsUpdate = previewCapabilityStatus === 'update';
+    const organizationAccess = Boolean(github?.previewCapability?.organizationAccess);
+    const organizationUpgradeInstallUrl = trustedGitHubAppInstallationUrl(github?.previewCapability?.upgradeInstallUrl);
 
     return (
       <div className="flex flex-col gap-8 sm:gap-10">
@@ -756,6 +762,52 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
               </section>
             ) : (
               <div className="grid max-w-4xl gap-5">
+                {!organizationAccess && !previewCapabilityNeedsUpdate && (
+                  <Alert className="border-warning/35 bg-warning/5 [&>svg]:text-warning">
+                    <Building2 aria-hidden="true" />
+                    <AlertTitle>{t('Enable organization repositories', 'Organisations-Repositories aktivieren')}</AlertTitle>
+                    <AlertDescription className="grid gap-4">
+                      <p>{t(
+                        'This GitHub App can currently be installed only on its owner account. Upgrade it once to connect organizations and keep every installation explicitly approved by this Shelter server.',
+                        'Diese GitHub App kann aktuell nur auf ihrem Besitzer-Account installiert werden. Aktualisiere sie einmalig, um Organisationen zu verbinden und weiterhin jede Installation ausdrücklich durch diesen Shelter-Server freizugeben.',
+                      )}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {github.previewCapability?.upgradePending ? (
+                          organizationUpgradeInstallUrl ? (
+                            <Button asChild size="sm">
+                              <a href={organizationUpgradeInstallUrl} target="_blank" rel="noopener noreferrer">
+                                {t('Continue upgrade', 'Upgrade fortsetzen')} <ExternalLink aria-hidden="true" />
+                              </a>
+                            </Button>
+                          ) : <Button size="sm" disabled>{t('Upgrade unavailable', 'Upgrade nicht verfügbar')}</Button>
+                        ) : (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm">{t('Enable organizations', 'Organisationen aktivieren')} <ArrowRight aria-hidden="true" /></Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogMedia><Building2 /></AlertDialogMedia>
+                                <AlertDialogTitle>{t('Create an organization-ready GitHub App?', 'Eine organisationsfähige GitHub App erstellen?')}</AlertDialogTitle>
+                                <AlertDialogDescription>{t(
+                                  'GitHub does not let manifests change an existing App’s visibility. Shelter therefore creates a public replacement with the same minimal permissions and switches only after it can access every currently connected repository.',
+                                  'GitHub erlaubt Manifesten nicht, die Sichtbarkeit einer bestehenden App zu ändern. Shelter erstellt daher eine öffentliche Ersatz-App mit denselben minimalen Berechtigungen und wechselt erst, wenn sie auf alle aktuell verbundenen Repositories zugreifen kann.',
+                                )}</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t('Cancel', 'Abbrechen')}</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => githubUpgrade.mutate()} disabled={githubUpgrade.isPending}>
+                                  {t('Continue to GitHub', 'Weiter zu GitHub')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        {githubAppUrl && <Button asChild size="sm" variant="outline"><a href={githubAppUrl} target="_blank" rel="noreferrer">{t('Review current app', 'Aktuelle App prüfen')} <ExternalLink /></a></Button>}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {previewCapabilityNeedsUpdate && (
                   <GitHubPreviewCapabilityNotice
                     capability={github.previewCapability}
@@ -833,6 +885,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                           const login = installation.accountLogin ?? installation.account?.login ?? 'GitHub Account';
                           const rawAccountType = installation.accountType ?? installation.account?.type ?? 'Account';
                           const accountType = rawAccountType === 'Organization' ? t('Organization', 'Organisation') : rawAccountType === 'User' ? t('Personal account', 'Persönlicher Account') : rawAccountType;
+                          const installationUrl = trustedGitHubRemediationUrl(installation.htmlUrl);
                           return (
                             <li key={String(installation.id)} className="flex min-w-0 items-center gap-3 px-3 py-3.5">
                               <span className="grid size-9 shrink-0 place-items-center rounded-md border bg-muted/30"><GitHubIcon className="size-4" aria-hidden="true" /></span>
@@ -843,6 +896,13 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                                 </span>
                               </div>
                               {installation.suspendedAt ? <StatusBadge status="offline" /> : <StatusBadge status="connected" />}
+                              {installationUrl && (
+                                <Button asChild size="icon-sm" variant="ghost">
+                                  <a href={installationUrl} target="_blank" rel="noreferrer" aria-label={t('Manage access for {account}', 'Zugriff für {account} verwalten', { account: login })}>
+                                    <ExternalLink aria-hidden="true" />
+                                  </a>
+                                </Button>
+                              )}
                             </li>
                           );
                         })}

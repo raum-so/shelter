@@ -1,6 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './client';
 
+describe('GitHub repository api', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps installation metadata so repositories can be grouped by account and organization', async () => {
+    const catalog = {
+      installations: [{
+        id: '456',
+        accountLogin: 'raum-so',
+        accountType: 'Organization',
+        repositorySelection: 'selected',
+        suspendedAt: null,
+      }],
+      repositories: [{
+        id: '99',
+        installationId: '456',
+        name: 'shelter',
+        fullName: 'raum-so/shelter',
+        owner: 'raum-so',
+        private: true,
+        defaultBranch: 'dev',
+        htmlUrl: 'https://github.com/raum-so/shelter',
+        cloneUrl: 'https://github.com/raum-so/shelter.git',
+      }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ data: catalog }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(api.githubRepositories()).resolves.toEqual(catalog);
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/github/repositories', expect.objectContaining({
+      credentials: 'include',
+    }));
+  });
+});
+
 describe('deployment api', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

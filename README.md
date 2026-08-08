@@ -315,7 +315,9 @@ Create a project and choose a source.
 
 ### GitHub repository
 
-Register Shelter's private GitHub App from **Settings → GitHub**, install it only on the repositories it should access, then select a repository and branch when creating a project.
+Register Shelter's dedicated GitHub App from **Settings → GitHub**, install it only on the repositories it should access, then select a personal account or organization, repository, and branch when creating a project. The repository picker groups every explicitly approved installation by account and provides a direct link to adjust its repository access.
+
+New Apps use GitHub's **Any account** visibility so the same Shelter instance can connect personal and organization repositories. This does not publish the App in a marketplace and does not make repository data public. Shelter stores an allowlist from its state-bound installation callbacks and ignores App installations that were not explicitly approved through this server.
 
 Per project, choose whether push-to-deploy is enabled:
 
@@ -326,7 +328,7 @@ Per project, choose whether push-to-deploy is enabled:
 
 #### GitHub App upgrades
 
-Newly registered Shelter GitHub Apps include every permission and webhook event required by the current Shelter version. When an older App is missing a required capability, Shelter can register a replacement through GitHub's App Manifest flow with the new permissions and events preselected. This creates a separate GitHub App; it does not modify the existing registration.
+Newly registered Shelter GitHub Apps include every permission, webhook event, and account visibility required by the current Shelter version. When an older App is missing a required capability or is limited to its owner account, Shelter can register an organization-ready replacement through GitHub's App Manifest flow with the current settings preselected. This creates a separate GitHub App; it does not modify the existing registration.
 
 The replacement remains pending while it is registered, installed, and checked. Shelter keeps the current App credentials, project connections, auto-deploys, and production traffic active throughout that process. It switches to the replacement only after the candidate App and installation satisfy the required capability checks. Cancelling the flow or failing a check leaves the existing connection unchanged.
 
@@ -384,6 +386,8 @@ The project root, build type, Dockerfile path, application port, and health-chec
 Variables are encrypted under `APP_SECRET` at rest. Saved values are not returned to the browser. The worker supplies them to automatic builds using a BuildKit secret and to running containers as environment variables.
 
 During GitHub, ZIP, and folder setup, Shelter detects bounded static references such as `process.env.KEY`, `import.meta.env.KEY`, Deno/Bun environment access, explicit example files, and common Zod/`createEnv` declarations. The setup separates required values from suggestions, server-only secrets from public client variables, and build-time from runtime use. High-confidence required values are requested before the first deployment, every finding links back to its source path and line, and a suspected false positive can be explicitly skipped. Dynamic lookups remain advisory and may need to be added manually.
+
+The project setup, production environment, and pull-request preview environment can also import pasted `.env` content. Parsing happens locally in the browser, supports comments, `export`, quoted values, and multiline quoted values, and never evaluates variable expansion or repository code. The import preview exposes key names only; matching form entries are replaced while unrelated variables remain unchanged. Nothing is persisted until the operator explicitly saves the surrounding form.
 
 Builds run through Shelter's dedicated `docker-container` BuildKit builder rather than the unbounded default builder. The builder enforces configured memory, swap, CPU, PID, and maximum-parallelism limits and applies a cache-GC target; supported Buildx versions also receive the same per-build resource limits. Shelter checks free space throughout source preparation and the build, cancels cancellable work, and refuses completion below `BUILD_MIN_FREE_GB`.
 
