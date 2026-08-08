@@ -25,6 +25,7 @@ import type {
   PullRequestPreviewStatus,
 } from '../types';
 import { formatDate, formatRelative } from '../utils/format';
+import { mergeEnvironmentVariables } from '../utils/environment-import';
 import { shouldRefetchGitHubPreviewCapability } from '../utils/github';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { GitHubPreviewCapabilityNotice } from './GitHubPreviewCapabilityNotice';
+import { EnvironmentImportDialog } from './EnvironmentImportDialog';
 
 export { GitHubPreviewCapabilityNotice as PreviewCapability } from './GitHubPreviewCapabilityNotice';
 
@@ -623,7 +625,15 @@ export function ProjectPullRequestPreviews({
             </div>
           )}
           {environmentValidation.globalError && <p className="text-sm text-destructive" role="alert">{environmentValidation.globalError}</p>}
-          <Button variant="outline" className="w-fit" disabled={environment.length >= MAX_ENVIRONMENT_VARIABLES || saveEnvironment.isPending} onClick={() => setEnvironment((current) => [...current, { key: '', value: '' }])}><Plus /> {t('Add variable', 'Variable hinzufügen')}</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="w-fit" disabled={environment.length >= MAX_ENVIRONMENT_VARIABLES || saveEnvironment.isPending} onClick={() => setEnvironment((current) => [...current, { key: '', value: '' }])}><Plus /> {t('Add variable', 'Variable hinzufügen')}</Button>
+            <EnvironmentImportDialog
+              existingKeys={environment.map((variable) => variable.key)}
+              disabled={saveEnvironment.isPending}
+              allowEmptyValues={false}
+              onImport={(variables) => setEnvironment((current) => mergeEnvironmentVariables(current, variables))}
+            />
+          </div>
         </CardContent>
         <CardFooter className="flex-col gap-3 sm:flex-row sm:justify-between">
           <p className="text-xs text-muted-foreground">{t('Changes apply to the next preview build, not to an already running preview.', 'Änderungen gelten für den nächsten Preview-Build, nicht für eine bereits laufende Preview.')}</p>

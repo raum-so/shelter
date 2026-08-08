@@ -24,6 +24,7 @@ import { NavigationGuard } from '../components/NavigationGuard';
 import { GitHubIcon } from '../components/GitHubIcon';
 import { GitHubRepositoryPicker, githubRepositoryKey } from '../components/GitHubRepositoryPicker';
 import { ProjectAnalysisCard, type ProjectAnalysisStatus } from '../components/ProjectAnalysisCard';
+import { EnvironmentImportDialog } from '../components/EnvironmentImportDialog';
 import { ProjectEnvironmentSetup } from '../components/ProjectEnvironmentSetup';
 import { StaticBasePathControl } from '../components/StaticBasePathControl';
 import { Button, Field, PageIntro, SelectField } from '../components/ui';
@@ -66,6 +67,7 @@ import {
   type DetectableBuildConfigField,
 } from '../utils/project-analysis';
 import { staticBasePathError } from '../utils/static-base-path';
+import type { ImportedEnvironmentVariable } from '../utils/environment-import';
 import { cn } from '@/lib/utils';
 import { localize, useI18n } from '@/i18n';
 
@@ -412,6 +414,30 @@ export function NewProjectPage() {
     )));
   }
 
+  function importEnvironmentVariables(imported: ImportedEnvironmentVariable[]) {
+    const importedByKey = new Map(imported.map((variable) => [variable.key, variable.value]));
+    setEnvironment((current) => {
+      const populated = current.filter((variable) => Boolean(variable.key.trim()));
+      const existingKeys = new Set(populated.map((variable) => variable.key));
+      const merged = populated.map((variable) => importedByKey.has(variable.key)
+        ? { ...variable, value: importedByKey.get(variable.key)! }
+        : variable);
+      for (const variable of imported) {
+        if (existingKeys.has(variable.key)) continue;
+        environmentId.current += 1;
+        merged.push({ id: environmentId.current, key: variable.key, value: variable.value });
+      }
+      return merged;
+    });
+    setSkippedDetectedEnvironmentKeys((current) => {
+      const next = new Set(current);
+      for (const variable of imported) {
+        if (variable.value.trim()) next.delete(variable.key);
+      }
+      return next;
+    });
+  }
+
   function environmentPayload(): NewProjectEnvironmentVariable[] | undefined {
     if (environment.length === 0) return undefined;
     return environment.map(({ key, value }) => ({ key: key.trim(), value }));
@@ -665,7 +691,7 @@ export function NewProjectPage() {
       let keyError: string | undefined;
       if (!key) keyError = t('Enter a variable name or remove this row.', 'Gib einen Variablennamen ein oder entferne diese Zeile.');
       else if (key.length > MAX_ENVIRONMENT_KEY_LENGTH) keyError = t('The key may contain at most {count} characters.', 'Der Key darf höchstens {count} Zeichen lang sein.', { count: MAX_ENVIRONMENT_KEY_LENGTH });
-      else if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) keyError = t('The key must begin with a letter or _.', 'Der Key muss mit einem Buchstaben oder _ beginnen.');
+      else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) keyError = t('Begin with a letter or underscore; letters, numbers, and _ are allowed.', 'Beginne mit Buchstabe oder Unterstrich; erlaubt sind Buchstaben, Zahlen und _.');
       else if (reservedEnvironmentKeys.has(key)) keyError = t('{key} is managed by Shelter and cannot be set here.', '{key} wird von Shelter verwaltet und kann hier nicht gesetzt werden.', { key });
       else if (keys.indexOf(key) !== index) keyError = t('{key} occurs more than once.', '{key} ist doppelt vorhanden.', { key });
 
@@ -1389,6 +1415,13 @@ export function NewProjectPage() {
                 skippedKeys={skippedDetectedEnvironmentKeys}
                 showErrors={submitAttempted}
                 disabled={createProject.isPending}
+                action={(
+                  <EnvironmentImportDialog
+                    existingKeys={environment.map((variable) => variable.key)}
+                    disabled={createProject.isPending}
+                    onImport={importEnvironmentVariables}
+                  />
+                )}
                 onChange={updateDetectedEnvironmentVariable}
                 onSkippedChange={(key, skipped) => setSkippedDetectedEnvironmentKeys((current) => {
                   const next = new Set(current);
@@ -1573,27 +1606,40 @@ export function NewProjectPage() {
                             })}
                           </AnimatePresence>
                         </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={addEnvironmentVariable}
+                            disabled={createProject.isPending || environment.length >= MAX_ENVIRONMENT_VARIABLES}
+                          >
+                            <Plus aria-hidden="true" /> {environment.length >= MAX_ENVIRONMENT_VARIABLES ? t('Maximum 200 variables', 'Maximal 200 Variablen') : t('Add variable', 'Weitere Variable')}
+                          </Button>
+                          <EnvironmentImportDialog
+                            existingKeys={environment.map((variable) => variable.key)}
+                            disabled={createProject.isPending}
+                            onImport={importEnvironmentVariables}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="mt-3"
                           onClick={addEnvironmentVariable}
-                          disabled={createProject.isPending || environment.length >= MAX_ENVIRONMENT_VARIABLES}
+                          disabled={createProject.isPending}
                         >
-                          <Plus aria-hidden="true" /> {environment.length >= MAX_ENVIRONMENT_VARIABLES ? t('Maximum 200 variables', 'Maximal 200 Variablen') : t('Add variable', 'Weitere Variable')}
+                          <Plus aria-hidden="true" /> {t('Add first variable', 'Erste Variable hinzufügen')}
                         </Button>
+                        <EnvironmentImportDialog
+                          existingKeys={[]}
+                          disabled={createProject.isPending}
+                          onImport={importEnvironmentVariables}
+                        />
                       </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addEnvironmentVariable}
-                        disabled={createProject.isPending}
-                      >
-                        <Plus aria-hidden="true" /> {t('Add first variable', 'Erste Variable hinzufügen')}
-                      </Button>
                     )}
 
                     {submitAttempted && environmentGlobalError && (

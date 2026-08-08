@@ -33,6 +33,7 @@ import { ProjectPullRequestPreviews } from '../components/ProjectPullRequestPrev
 import { ProjectPreviewCard } from '../components/ProjectPreviewCard';
 import { ProjectObservabilityTab } from '../components/ProjectObservabilityTab';
 import { DomainAccessSettings } from '../components/DomainAccessSettings';
+import { EnvironmentImportDialog } from '../components/EnvironmentImportDialog';
 import { StaticBasePathControl } from '../components/StaticBasePathControl';
 import { Button, ErrorState, Field, PageIntro, SelectField, Skeleton, StatusBadge } from '../components/ui';
 import {
@@ -83,6 +84,7 @@ import {
 } from '../utils/deployment';
 import { staticBasePathError } from '../utils/static-base-path';
 import { domainHostname, isValidSubdomain, normalizeSubdomain, type DomainMode } from '../utils/domain';
+import { mergeEnvironmentVariables } from '../utils/environment-import';
 import {
   isFileStorageProject,
   projectRuntimeKind,
@@ -1449,7 +1451,15 @@ export function ProjectPage() {
                   </Empty>
                 )}
 
-                <Button variant="outline" className="w-fit" type="button" onClick={() => setEnvironment((current) => [...current, { key: '', value: '' }])} disabled={saveEnvironment.isPending || environment.length >= MAX_ENVIRONMENT_VARIABLES}><Plus /> {t('Add variable', 'Variable hinzufügen')}</Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" className="w-fit" type="button" onClick={() => setEnvironment((current) => [...current, { key: '', value: '' }])} disabled={saveEnvironment.isPending || environment.length >= MAX_ENVIRONMENT_VARIABLES}><Plus /> {t('Add variable', 'Variable hinzufügen')}</Button>
+                  <EnvironmentImportDialog
+                    existingKeys={environment.map((variable) => variable.key)}
+                    disabled={saveEnvironment.isPending}
+                    allowEmptyValues={false}
+                    onImport={(variables) => setEnvironment((current) => mergeEnvironmentVariables(current, variables))}
+                  />
+                </div>
 
                 {!environmentValid && environment.length > 0 && (
                   <Alert variant="destructive"><AlertTriangle /><AlertTitle>{t('Check the highlighted variables', 'Bitte prüfe die markierten Variablen')}</AlertTitle><AlertDescription>{environmentGlobalError ?? t('Every name must be unique; new variables require a value.', 'Jeder Name muss eindeutig sein; neue Variablen benötigen einen Wert.')}</AlertDescription></Alert>
