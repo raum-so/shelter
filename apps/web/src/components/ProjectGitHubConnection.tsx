@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../api/client';
-import type { GitHubRepository, Project } from '../types';
+import type { Project } from '../types';
 import {
   gitHubRepositoryUrlFromFullName,
   hasGitHubProjectDraftChanges,
@@ -31,10 +31,7 @@ import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { useI18n } from '@/i18n';
 import { GitHubIcon } from './GitHubIcon';
-
-function repositoryKey(repository: Pick<GitHubRepository, 'installationId' | 'id'>) {
-  return `${repository.installationId}:${repository.id}`;
-}
+import { GitHubRepositoryPicker, githubRepositoryKey } from './GitHubRepositoryPicker';
 
 function comparableRepositoryUrl(value?: string) {
   return value?.trim().toLowerCase().replace(/\.git$/, '').replace(/\/$/, '');
@@ -60,7 +57,6 @@ export function ProjectGitHubConnection({
   const initializedBranch = useRef(connection?.branch ?? project.branch ?? 'main');
   const initializedAutoDeploy = useRef(connection?.autoDeploy ?? true);
   const [selectedRepositoryKey, setSelectedRepositoryKey] = useState('');
-  const [repositorySearch, setRepositorySearch] = useState('');
   const [branch, setBranch] = useState(connection?.branch ?? project.branch ?? 'main');
   const [autoDeploy, setAutoDeploy] = useState(connection?.autoDeploy ?? true);
 
@@ -77,7 +73,7 @@ export function ProjectGitHubConnection({
     retry: false,
     staleTime: 60_000,
   });
-  const selectedRepository = repositories.data?.find((repository) => repositoryKey(repository) === selectedRepositoryKey);
+  const selectedRepository = repositories.data?.repositories.find((repository) => githubRepositoryKey(repository) === selectedRepositoryKey);
   const installationId = connection?.installationId ?? selectedRepository?.installationId;
   const repositoryId = connection?.repositoryId ?? selectedRepository?.id;
   const branches = useQuery({
@@ -119,21 +115,20 @@ export function ProjectGitHubConnection({
     initializedBranch.current = nextBranch;
     initializedAutoDeploy.current = nextAutoDeploy;
     setSelectedRepositoryKey('');
-    setRepositorySearch('');
     setBranch(nextBranch);
     setAutoDeploy(nextAutoDeploy);
   }, [connection?.autoDeploy, connection?.branch, connectionSignature, localDraftDirty, project.branch, project.id]);
 
   useEffect(() => {
-    if (connection || !repositories.data?.length || inferredRepository.current === project.id) return;
+    if (connection || !repositories.data?.repositories.length || inferredRepository.current === project.id) return;
     inferredRepository.current = project.id;
     const currentUrl = comparableRepositoryUrl(project.repositoryUrl);
-    const match = repositories.data.find((repository) => (
+    const match = repositories.data.repositories.find((repository) => (
       comparableRepositoryUrl(repository.cloneUrl) === currentUrl
       || comparableRepositoryUrl(repository.htmlUrl) === currentUrl
     ));
     if (!match) return;
-    const nextRepositoryKey = repositoryKey(match);
+    const nextRepositoryKey = githubRepositoryKey(match);
     const nextBranch = project.branch ?? match.defaultBranch ?? 'main';
     initializedRepositoryKey.current = nextRepositoryKey;
     initializedBranch.current = nextBranch;
@@ -141,14 +136,6 @@ export function ProjectGitHubConnection({
     setBranch(nextBranch);
   }, [connection, project.branch, project.id, project.repositoryUrl, repositories.data]);
 
-  const filteredRepositories = useMemo(() => {
-    const needle = repositorySearch.trim().toLowerCase();
-    if (!needle) return repositories.data ?? [];
-    const matches = (repositories.data ?? []).filter((repository) => repository.fullName.toLowerCase().includes(needle));
-    return selectedRepository && !matches.some((repository) => repository.id === selectedRepository.id)
-      ? [selectedRepository, ...matches]
-      : matches;
-  }, [repositories.data, repositorySearch, selectedRepository]);
   const branchOptions = useMemo(() => {
     const options = branches.data ?? [];
     return branch && !options.some((candidate) => candidate.name === branch)
@@ -274,9 +261,9 @@ export function ProjectGitHubConnection({
             ) : repositories.isError ? (
               <Alert variant="destructive"><AlertTriangle /><AlertTitle>{t('Repositories could not be loaded', 'Repositories konnten nicht geladen werden')}</AlertTitle><AlertDescription>{repositories.error instanceof Error ? repositories.error.message : t('Please try again.', 'Bitte versuche es erneut.')}</AlertDescription></Alert>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {(repositories.data?.length ?? 0) === 0 && (
-                  <Alert className="sm:col-span-2">
+              <div className="grid gap-4">
+                {(repositories.data?.repositories.length ?? 0) === 0 && (
+                  <Alert>
                     <GitHubIcon aria-hidden="true" />
                     <AlertTitle>{t('No repositories shared', 'Keine Repositories freigegeben')}</AlertTitle>
                     <AlertDescription className="grid gap-3">
@@ -285,21 +272,17 @@ export function ProjectGitHubConnection({
                     </AlertDescription>
                   </Alert>
                 )}
-                <Field label={t('Search repositories', 'Repositories durchsuchen')} value={repositorySearch} onChange={(event) => setRepositorySearch(event.target.value)} placeholder={t('Organization or repository', 'Organisation oder Repository')} disabled={busy} />
-                <SelectField
-                  label={t('Repository', 'Repository')}
-                  value={selectedRepositoryKey}
-                  onChange={(event) => {
-                    const nextKey = event.target.value;
-                    const repository = repositories.data?.find((candidate) => repositoryKey(candidate) === nextKey);
-                    setSelectedRepositoryKey(nextKey);
-                    if (repository) setBranch(repository.defaultBranch || 'main');
-                  }}
-                  disabled={busy || filteredRepositories.length === 0}
-                >
-                  <option value="">{t('Select repository', 'Repository auswählen')}</option>
-                  {filteredRepositories.map((repository) => <option value={repositoryKey(repository)} key={repositoryKey(repository)}>{repository.fullName}{repository.private ? ` · ${t('private', 'privat')}` : ''}</option>)}
-                </SelectField>
+                {repositories.data && (
+                  <GitHubRepositoryPicker
+                    catalog={repositories.data}
+                    value={selectedRepositoryKey}
+                    onValueChange={(repository) => {
+                      setSelectedRepositoryKey(githubRepositoryKey(repository));
+                      setBranch(repository.defaultBranch || 'main');
+                    }}
+                    disabled={busy || repositories.data.repositories.length === 0}
+                  />
+                )}
               </div>
             )}
 

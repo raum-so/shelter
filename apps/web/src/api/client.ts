@@ -17,7 +17,7 @@ import type {
   GitHubPreviewCapability,
   GitHubManifestStartResult,
   GitHubProjectInput,
-  GitHubRepository,
+  GitHubRepositoryCatalog,
   GitHubSettings,
   GitProjectInput,
   HostnameAvailability,
@@ -627,10 +627,10 @@ export const api = {
   },
 
   async githubRepositories() {
-    const payload = await request<{ repositories: GitHubRepository[] } | { data: { repositories: GitHubRepository[] } }>(
+    const payload = await request<GitHubRepositoryCatalog | { data: GitHubRepositoryCatalog }>(
       '/api/settings/github/repositories',
     );
-    return unwrap(payload).repositories;
+    return unwrap(payload);
   },
 
   async githubBranches(installationId: string | number, repositoryId: string | number, signal?: AbortSignal) {

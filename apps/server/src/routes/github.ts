@@ -14,6 +14,7 @@ import {
 const NumericId = z.string().regex(/^\d{1,20}$/);
 const RECOVERABLE_GITHUB_UPGRADE_ERRORS = new Set([
   "GITHUB_UPGRADE_APP_CAPABILITIES",
+  "GITHUB_UPGRADE_APP_VISIBILITY",
   "GITHUB_UPGRADE_INSTALLATION_CAPABILITIES",
   "GITHUB_UPGRADE_REPOSITORIES_MISSING",
   "GITHUB_UPGRADE_INSTALLATION_SUSPENDED",
@@ -80,6 +81,7 @@ export function registerGithubRoutes(app: FastifyInstance, github: GitHubService
           installationPullRequestsPermission: null,
           installationPullRequestEvent: null,
           installationSuspended: null,
+          organizationAccess: false,
           remediation: "configure_app",
           remediationUrl: null,
           upgradePending: false,

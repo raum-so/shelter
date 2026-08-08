@@ -250,7 +250,7 @@ describe("GitHub App manifest and API authentication", () => {
       hook_attributes: { url: "https://hosting.example.com/api/webhooks/github", active: true },
       redirect_url: "https://hosting.example.com/api/settings/github/manifest/callback",
       setup_url: "https://hosting.example.com/api/settings/github/setup/callback?state=setup-state",
-      public: false,
+      public: true,
       request_oauth_on_install: false,
       setup_on_update: true,
       default_permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
@@ -353,7 +353,7 @@ describe("GitHub App manifest and API authentication", () => {
       url: "https://hosting.example.com",
       hook_attributes: { url: "https://hosting.example.com/api/webhooks/github", active: true },
       redirect_url: "https://hosting.example.com/api/settings/github/manifest/callback",
-      public: false,
+      public: true,
       request_oauth_on_install: false,
       setup_on_update: true,
       default_permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
@@ -455,6 +455,7 @@ describe("GitHub App manifest and API authentication", () => {
           candidateAppChecks += 1;
           return json({
               slug: "shelter-upgrade",
+              public: true,
               owner: { login: "example", type: "Organization" },
               permissions: { contents: "read", metadata: "read", pull_requests: "read" },
               events: ["pull_request"]
@@ -498,6 +499,7 @@ describe("GitHub App manifest and API authentication", () => {
         return issuer === "84"
           ? json({
               slug: "shelter-upgrade",
+              public: true,
               owner: { login: "example", type: "Organization" },
               permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
               events: ["push", "pull_request"]
@@ -584,6 +586,7 @@ describe("GitHub App manifest and API authentication", () => {
         if (url.endsWith("/app") && issuer === "84") {
           return json({
             slug: "shelter-upgrade",
+            public: true,
             owner: { login: "example", type: "Organization" },
             permissions: invalid.permissions,
             events: invalid.events
@@ -661,6 +664,7 @@ describe("GitHub App manifest and API authentication", () => {
         if (url.endsWith("/app") && issuer === "84") {
           return json({
             slug: "shelter-upgrade",
+            public: true,
             owner: { login: "example", type: "Organization" },
             permissions: {
               contents: "read",
@@ -1042,6 +1046,7 @@ describe("GitHub App manifest and API authentication", () => {
         if (issuer === "84") {
           return json({
             slug: "shelter-upgrade",
+            public: true,
             owner: { login: "example", type: "Organization" },
             permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
             events: ["push", "pull_request"]
@@ -1571,6 +1576,7 @@ describe("GitHub App manifest and API authentication", () => {
         return issuer === "84"
           ? json({
               slug: "shelter-upgrade",
+              public: true,
               owner: { login: "example", type: "Organization" },
               permissions: { contents: "read", statuses: "write", metadata: "read", pull_requests: "read" },
               events: ["push", "pull_request"]
@@ -1660,6 +1666,7 @@ describe("GitHub App manifest and API authentication", () => {
           return issuer === "84"
             ? json({
                 slug: "shelter-upgrade",
+                public: true,
                 owner: { login: "alice", type: "User" },
                 permissions: {
                   contents: "read",
@@ -1823,6 +1830,7 @@ describe("GitHub App manifest and API authentication", () => {
     const setupState = await connect(github);
 
     await github.completeSetup(setupState, "123");
+    expect(JSON.parse(database.getSetting("github.trusted_installations")!)).toEqual(["123"]);
     const first = await github.installationToken("123");
     const second = await github.installationToken("123");
     expect(first).toBe(second);
@@ -2020,6 +2028,49 @@ describe("GitHub App manifest and API authentication", () => {
         id: "126",
         htmlUrl: "https://github.com/organizations/fallback-org/settings/installations/126"
       })
+    ]);
+    database.close();
+  });
+
+  it("returns only installations explicitly approved by this Shelter server after setup", async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/app-manifests/manifest-code/conversions")) return json(conversion(), 201);
+      if (url.endsWith("/app/installations/123")) {
+        return json({
+          id: 123,
+          app_id: 42,
+          account: { login: "andy", type: "User", avatar_url: null },
+          repository_selection: "all",
+          suspended_at: null
+        });
+      }
+      if (url.includes("/app/installations?")) {
+        return json([
+          {
+            id: 123,
+            app_id: 42,
+            account: { login: "andy", type: "User", avatar_url: null },
+            repository_selection: "all",
+            suspended_at: null
+          },
+          {
+            id: 124,
+            app_id: 42,
+            account: { login: "unapproved-org", type: "Organization", avatar_url: null },
+            repository_selection: "all",
+            suspended_at: null
+          }
+        ]);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as unknown as typeof fetch;
+    const { database, github } = context(fetcher);
+    const setupState = await connect(github);
+    await github.completeSetup(setupState, "123");
+
+    await expect(github.installations()).resolves.toEqual([
+      expect.objectContaining({ id: "123", accountLogin: "andy" })
     ]);
     database.close();
   });
