@@ -52,6 +52,7 @@ function MetricCard({
   detail,
   to,
   alert = false,
+  tone = 'primary',
 }: {
   icon: typeof FolderKanban;
   label: string;
@@ -59,6 +60,7 @@ function MetricCard({
   detail: string;
   to: string;
   alert?: boolean;
+  tone?: 'primary' | 'success' | 'info' | 'warning';
 }) {
   return (
     <Link
@@ -66,16 +68,13 @@ function MetricCard({
       className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       aria-label={`${label}: ${value}. ${detail}`}
     >
-      <Card className="h-full gap-3 py-4 shadow-sm transition-colors group-hover:border-foreground/20 group-hover:bg-muted/20 sm:py-5">
+      <Card data-tone={alert ? 'destructive' : tone} className="metric-card h-full gap-3 py-4 transition-colors group-hover:border-ring/50 sm:py-5">
         <CardHeader className="grid grid-cols-[1fr_auto] items-start gap-3">
           <div>
-            <CardDescription className="font-medium">{label}</CardDescription>
-            <CardTitle className={cn('mt-2 text-3xl tabular-nums', alert && 'text-destructive')}>{value}</CardTitle>
+            <CardDescription>{label}</CardDescription>
+            <CardTitle variant="metric" data-alert={alert}>{value}</CardTitle>
           </div>
-          <span className={cn(
-            'grid size-9 place-items-center rounded-lg border bg-muted/40 text-muted-foreground',
-            alert && 'border-destructive/20 bg-destructive/5 text-destructive',
-          )}>
+          <span className="metric-icon">
             <Icon className="size-4" aria-hidden="true" />
           </span>
         </CardHeader>
@@ -102,7 +101,7 @@ function ProjectActivityRow({ project }: { project: Project }) {
     <li>
       <Link
         to={`/projects/${project.id}`}
-        className="group grid gap-3 px-4 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/35 sm:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.85fr)_auto] sm:items-center sm:px-6"
+        className="group grid gap-3 px-4 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/35 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.85fr)_auto] sm:items-center sm:px-6"
       >
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-muted/30 text-muted-foreground">
@@ -148,14 +147,18 @@ function DeploymentRow({ deployment, projects }: { deployment: Deployment; proje
         <span className="mt-1 block truncate text-xs text-muted-foreground">
           {deployment.commitMessage ?? (project ? deploymentSourceLabel(deployment, project) : deployment.sourceRef ?? 'Deployment')}
         </span>
-        <span className="mt-0.5 block truncate font-mono text-[0.65rem] text-muted-foreground/80">
+        <span className="mt-0.5 block truncate font-mono text-[0.65rem] text-muted-foreground">
           {deployment.commitSha?.slice(0, 10) ?? deployment.sourceRef ?? deployment.id.slice(0, 10)}{deployment.commitAuthor ? ` · ${deployment.commitAuthor}` : ''}
         </span>
       </div>
       <StatusBadge status={deployment.status} />
-      <span className="text-xs tabular-nums text-muted-foreground">{formatDuration(deployment.durationSeconds)}</span>
-      <span className="text-xs text-muted-foreground">{formatRelative(deployment.finishedAt ?? deployment.startedAt ?? deployment.createdAt, locale)}</span>
-      {deployment.projectId && <ArrowUpRight className="hidden size-4 text-muted-foreground sm:block" aria-hidden="true" />}
+      <div className="flex items-center gap-3 sm:justify-end">
+        <span className="text-right text-xs text-muted-foreground">
+          <span className="block">{formatRelative(deployment.finishedAt ?? deployment.startedAt ?? deployment.createdAt, locale)}</span>
+          <span className="mt-1 block font-mono">{formatDuration(deployment.durationSeconds)}</span>
+        </span>
+        {deployment.projectId && <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+      </div>
     </>
   );
 
@@ -164,12 +167,12 @@ function DeploymentRow({ deployment, projects }: { deployment: Deployment; proje
       {deployment.projectId ? (
         <Link
           to={`/projects/${deployment.projectId}/deployments/${deployment.id}`}
-          className="grid gap-3 px-4 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/35 sm:grid-cols-[minmax(0,1fr)_auto_4rem_7rem_auto] sm:items-center sm:px-6"
+          className="grid gap-3 px-4 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/35 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:px-6"
         >
           {row}
         </Link>
       ) : (
-        <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_4rem_7rem] sm:items-center sm:px-6">{row}</div>
+        <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:px-6">{row}</div>
       )}
     </li>
   );
@@ -264,7 +267,7 @@ export function OverviewPage() {
         : null;
 
   return (
-    <div className="flex w-full flex-col gap-8">
+    <div className="flex w-full flex-col gap-5">
       <PageIntro
         eyebrow={<><Activity className="size-4" aria-hidden="true" /> {t('Overview', 'Übersicht')}</>}
         title="Dashboard"
@@ -300,10 +303,11 @@ export function OverviewPage() {
 
       <section aria-label={t('Metrics', 'Kennzahlen')} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={FolderKanban} label={t('Projects', 'Projekte')} value={projectCount} detail={t('Open all projects', 'Alle Projekte öffnen')} to="/projects" />
-        <MetricCard icon={Rocket} label={t('In production', 'In Produktion')} value={liveCount} detail={t('{count} not live', '{count} nicht live', { count: Math.max(0, projectCount - liveCount) })} to="/projects" />
-        <MetricCard icon={Globe2} label="Domains" value={domainCount} detail="Cloudflare routing" to="/settings/cloudflare" />
+        <MetricCard icon={Rocket} tone="success" label={t('In production', 'In Produktion')} value={liveCount} detail={t('{count} not live', '{count} nicht live', { count: Math.max(0, projectCount - liveCount) })} to="/projects" />
+        <MetricCard icon={Globe2} tone="info" label="Domains" value={domainCount} detail="Cloudflare routing" to="/settings/cloudflare" />
         <MetricCard
           icon={Activity}
+          tone="warning"
           label={t('Needs attention', 'Handlungsbedarf')}
           value={failedCount}
           detail={deployingCount === 1 ? t('1 active build', '1 Build aktiv') : t('{count} active builds', '{count} Builds aktiv', { count: deployingCount })}
@@ -312,30 +316,54 @@ export function OverviewPage() {
         />
       </section>
 
-      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(19rem,0.75fr)]">
-        <section className="min-w-0" aria-labelledby="dashboard-projects-title">
-          <Card className="h-full gap-0 py-0">
-            <CardHeader className="border-b py-5 sm:px-6">
-              <CardTitle><h2 id="dashboard-projects-title">{t('Recent projects', 'Aktuelle Projekte')}</h2></CardTitle>
-              <CardDescription>{t('Recently changed projects with production status and routing.', 'Zuletzt geänderte Projekte mit Produktionsstatus und Routing.')}</CardDescription>
-              <CardAction><Button asChild variant="ghost" size="sm"><Link to="/projects">{t('View all', 'Alle anzeigen')} <ArrowRight aria-hidden="true" /></Link></Button></CardAction>
-            </CardHeader>
-            <CardContent className="p-0">
-              {recentProjects.length > 0 ? (
-                <ul className="divide-y">{recentProjects.map((project) => <ProjectActivityRow project={project} key={project.id} />)}</ul>
-              ) : (
-                <Empty className="min-h-72 rounded-none p-6">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon"><FolderKanban aria-hidden="true" /></EmptyMedia>
-                    <EmptyTitle>{t('No projects yet', 'Noch keine Projekte')}</EmptyTitle>
-                    <EmptyDescription>{t('Create your first project from Git, a ZIP archive, or a folder.', 'Dein erstes Projekt kann aus Git oder einem ZIP beziehungsweise Ordner entstehen.')}</EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent><Button asChild><Link to="/projects/new">{t('Create project', 'Projekt anlegen')} <ArrowRight aria-hidden="true" /></Link></Button></EmptyContent>
-                </Empty>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,0.48fr)]">
+        <div className="grid min-w-0 gap-5">
+          <section className="min-w-0" aria-labelledby="dashboard-projects-title">
+            <Card className="h-full gap-0 py-0">
+              <CardHeader className="border-b py-5 sm:px-6">
+                <CardTitle><h2 id="dashboard-projects-title">{t('Recent projects', 'Aktuelle Projekte')}</h2></CardTitle>
+                <CardDescription>{t('Recently changed projects with production status and routing.', 'Zuletzt geänderte Projekte mit Produktionsstatus und Routing.')}</CardDescription>
+                <CardAction><Button asChild variant="ghost" size="sm"><Link to="/projects">{t('View all', 'Alle anzeigen')} <ArrowRight aria-hidden="true" /></Link></Button></CardAction>
+              </CardHeader>
+              <CardContent className="p-0">
+                {recentProjects.length > 0 ? (
+                  <ul className="divide-y">{recentProjects.map((project) => <ProjectActivityRow project={project} key={project.id} />)}</ul>
+                ) : (
+                  <Empty className="min-h-72 rounded-none p-6">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><FolderKanban aria-hidden="true" /></EmptyMedia>
+                      <EmptyTitle>{t('No projects yet', 'Noch keine Projekte')}</EmptyTitle>
+                      <EmptyDescription>{t('Create your first project from Git, a ZIP archive, or a folder.', 'Dein erstes Projekt kann aus Git oder einem ZIP beziehungsweise Ordner entstehen.')}</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent><Button asChild><Link to="/projects/new">{t('Create project', 'Projekt anlegen')} <ArrowRight aria-hidden="true" /></Link></Button></EmptyContent>
+                  </Empty>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+
+          <section aria-labelledby="deployment-activity-title">
+            <Card className="gap-0 py-0">
+              <CardHeader className="border-b py-5 sm:px-6">
+                <CardTitle><h2 id="deployment-activity-title">{t('Recent deployments', 'Letzte Deployments')}</h2></CardTitle>
+                <CardDescription>{t('The latest builds across all projects.', 'Die neuesten Builds über alle Projekte hinweg.')}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {deployments.length > 0 ? (
+                  <ul className="divide-y">{deployments.slice(0, 6).map((deployment) => <DeploymentRow deployment={deployment} projects={projects} key={deployment.id} />)}</ul>
+                ) : (
+                  <Empty className="min-h-44 rounded-none p-6">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><Activity aria-hidden="true" /></EmptyMedia>
+                      <EmptyTitle>{t('No deployment activity yet', 'Noch keine Deployment-Aktivität')}</EmptyTitle>
+                      <EmptyDescription>{t('A project’s build history appears here after you create it.', 'Sobald du ein Projekt anlegst, erscheint sein Build-Verlauf hier.')}</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        </div>
 
         <section aria-labelledby="system-status-title">
           <Card className="h-full gap-0 py-0">
@@ -412,28 +440,6 @@ export function OverviewPage() {
           </Card>
         </section>
       </div>
-
-      <section aria-labelledby="deployment-activity-title">
-        <Card className="gap-0 py-0">
-          <CardHeader className="border-b py-5 sm:px-6">
-            <CardTitle><h2 id="deployment-activity-title">{t('Recent deployments', 'Letzte Deployments')}</h2></CardTitle>
-            <CardDescription>{t('The latest builds across all projects.', 'Die neuesten Builds über alle Projekte hinweg.')}</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {deployments.length > 0 ? (
-              <ul className="divide-y">{deployments.slice(0, 6).map((deployment) => <DeploymentRow deployment={deployment} projects={projects} key={deployment.id} />)}</ul>
-            ) : (
-              <Empty className="min-h-44 rounded-none p-6">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon"><Activity aria-hidden="true" /></EmptyMedia>
-                  <EmptyTitle>{t('No deployment activity yet', 'Noch keine Deployment-Aktivität')}</EmptyTitle>
-                  <EmptyDescription>{t('A project’s build history appears here after you create it.', 'Sobald du ein Projekt anlegst, erscheint sein Build-Verlauf hier.')}</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </CardContent>
-        </Card>
-      </section>
     </div>
   );
 }

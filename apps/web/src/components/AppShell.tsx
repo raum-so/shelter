@@ -22,6 +22,7 @@ import { Brand } from './Brand';
 import { LanguageToggle } from './LanguageToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { Button, Skeleton } from './ui';
+import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import {
   DropdownMenu,
@@ -127,54 +128,16 @@ export function AppShell({ session }: { session: Session }) {
         : { label: t('Node operational', 'Node betriebsbereit'), detail: t('Worker connected', 'Worker verbunden'), dot: 'bg-success' };
 
   const renderSidebarContent = (mobile = false) => (
-    <div className="flex h-full min-h-full flex-col overflow-y-auto bg-sidebar text-sidebar-foreground">
-      <div className="flex h-14 shrink-0 items-center px-4">
+    <div className="workspace-sidebar flex h-full min-h-full flex-col overflow-y-auto text-sidebar-foreground">
+      <div className="flex h-24 shrink-0 items-center px-6">
         <Brand inverse />
       </div>
 
-      <Separator className="bg-sidebar-border" />
-
-      <div className="shrink-0 px-3 pt-4">
-        <Button asChild className="w-full justify-start" size="lg">
-          <NavLink to="/projects/new" onClick={() => mobile && setMenuOpen(false)}>
-            <Plus aria-hidden="true" /> {t('New project', 'Neues Projekt')}
-          </NavLink>
-        </Button>
-      </div>
-
-      <nav className="grid shrink-0 gap-1 px-2 py-4" aria-label={t('Main navigation', 'Hauptnavigation')}>
-        <p className="px-3 pb-2 text-xs font-medium text-muted-foreground">
-          {t('Navigation', 'Navigation')}
-        </p>
-        {navigation.map(({ to, label: itemLabel, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            ref={mobile && to === '/dashboard' ? mobileNavFirstRef : undefined}
-            onClick={() => mobile && setMenuOpen(false)}
-            aria-current={to.startsWith('/settings') && location.pathname.startsWith('/settings') ? 'page' : undefined}
-            className={({ isActive }) => {
-              const settingsActive = to.startsWith('/settings') && location.pathname.startsWith('/settings');
-              return cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring/50',
-                isActive || settingsActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              );
-            }}
-          >
-            <Icon className="size-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">{itemLabel}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="mt-auto shrink-0 px-3 pb-3">
+      <div className="shrink-0 px-4 pb-2">
         <NavLink
           to="/server"
           onClick={() => mobile && setMenuOpen(false)}
-          className="mb-3 flex items-center gap-3 rounded-md px-2 py-2 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50"
+          className="workspace-node flex items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50"
           aria-label={t(
             '{status}. Open server metrics',
             '{status}. Servermetriken öffnen',
@@ -193,6 +156,42 @@ export function AppShell({ session }: { session: Session }) {
             <Cloud className="size-4 text-muted-foreground" aria-label={t('Cloudflare connected', 'Cloudflare verbunden')} />
           )}
         </NavLink>
+      </div>
+
+      <nav className="grid shrink-0 gap-1.5 px-4 py-5" aria-label={t('Main navigation', 'Hauptnavigation')}>
+        <p className="workspace-section-label">
+          {t('Workspace', 'Arbeitsbereich')}
+        </p>
+        {navigation.map(({ to, label: itemLabel, icon: Icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            ref={mobile && to === '/dashboard' ? mobileNavFirstRef : undefined}
+            onClick={() => mobile && setMenuOpen(false)}
+            aria-current={to.startsWith('/settings') && location.pathname.startsWith('/settings') ? 'page' : undefined}
+            className="workspace-nav-link"
+          >
+            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{itemLabel}</span>
+            {to === '/projects' && overview.data && (
+              <Badge variant="secondary">{overview.data.stats?.projects ?? overview.data.projects?.length ?? 0}</Badge>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="mt-auto shrink-0 px-4 pb-4">
+        <div className="workspace-node mb-5 flex flex-col gap-3 p-4">
+          <FolderKanban className="size-5 text-sidebar-accent-foreground" aria-hidden="true" />
+          <p className="text-sm font-medium">{t('Give your code a home.', 'Ein Zuhause für deinen Code.')}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{t('From Git or a folder to your own server.', 'Von Git oder einem Ordner auf deinen eigenen Server.')}</p>
+          <Button asChild className="w-full" size="lg">
+            <NavLink to="/projects/new" onClick={() => mobile && setMenuOpen(false)}>
+              <Plus data-icon="inline-start" aria-hidden="true" /> {t('New project', 'Neues Projekt')}
+            </NavLink>
+          </Button>
+        </div>
 
         <Separator className="mb-3 bg-sidebar-border" />
 
@@ -263,7 +262,7 @@ export function AppShell({ session }: { session: Session }) {
   );
 
   return (
-    <div className="min-h-svh bg-background">
+    <div className="workspace-shell min-h-svh">
       <a
         className="fixed top-3 left-3 z-[100] -translate-y-20 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-lg transition-transform focus:translate-y-0"
         href="#main-content"
@@ -271,7 +270,7 @@ export function AppShell({ session }: { session: Session }) {
         {t('Skip to content', 'Zum Inhalt springen')}
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-sidebar-border lg:block">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 border-r border-sidebar-border lg:block">
         {renderSidebarContent()}
       </aside>
 
@@ -308,7 +307,7 @@ export function AppShell({ session }: { session: Session }) {
       <main
         id="main-content"
         tabIndex={-1}
-        className="min-h-[calc(100svh-3.5rem)] px-4 py-6 outline-none sm:px-6 sm:py-8 lg:ml-64 lg:min-h-svh lg:px-8"
+        className="min-h-[calc(100svh-3.5rem)] px-4 py-6 outline-none sm:px-6 sm:py-8 lg:ml-60 lg:min-h-svh lg:px-7"
       >
         <div className="mx-auto w-full max-w-[88rem]">
           <Suspense fallback={<RouteFallback />}>

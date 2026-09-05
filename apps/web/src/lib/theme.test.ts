@@ -74,12 +74,12 @@ describe('applyResolvedTheme', () => {
     expect([...classes]).toEqual(['app-root', 'dark']);
     expect(root.style.colorScheme).toBe('dark');
     expect(root.dataset.resolvedTheme).toBe('dark');
-    expect(attributes.content).toBe('#0a0a0a');
+    expect(attributes.content).toBe('#061321');
 
     applyResolvedTheme('light', targetDocument);
     expect([...classes]).toEqual(['app-root', 'light']);
     expect(root.style.colorScheme).toBe('light');
-    expect(attributes.content).toBe('#ffffff');
+    expect(attributes.content).toBe('#f5f7fc');
   });
 
   it('is a safe no-op when no document exists', () => {

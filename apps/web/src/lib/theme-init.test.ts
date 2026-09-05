@@ -78,7 +78,7 @@ describe('theme-init.js', () => {
     expect([...result.classes]).toEqual(['existing', 'dark']);
     expect(result.root.dataset).toEqual({ theme: 'dark', resolvedTheme: 'dark' });
     expect(result.root.style.colorScheme).toBe('dark');
-    expect(result.attributes.content).toBe('#0a0a0a');
+    expect(result.attributes.content).toBe('#061321');
     expect(result.root.lang).toBe('en');
   });
 
@@ -99,7 +99,7 @@ describe('theme-init.js', () => {
     const invalid = runThemeInit({ storedTheme: 'sepia' });
     expect([...invalid.classes]).toEqual(['existing', 'light']);
     expect(invalid.root.dataset).toEqual({ theme: 'system', resolvedTheme: 'light' });
-    expect(invalid.attributes.content).toBe('#ffffff');
+    expect(invalid.attributes.content).toBe('#f5f7fc');
 
     const inaccessible = runThemeInit({ storageThrows: true, prefersDark: true });
     expect(inaccessible.requestedKeys).toEqual([]);
