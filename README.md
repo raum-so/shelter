@@ -61,6 +61,7 @@ Most deployment platforms trade ownership for convenience. Traditional self-host
 - **Operator-ready:** dashboard, deployment logs, rollbacks, project deletion, encrypted variables, resource limits, and per-project runtime observability.
 - **Automation-ready:** scoped, expiring personal access tokens, a documented HTTP API, OpenAPI, and an installable `shelter` CLI.
 - **Verifiable releases:** immutable GitHub Releases, digest-pinned multi-platform images, signed provenance, downloadable SBOMs, and a fail-closed release installer.
+- **Workspace design:** navy and indigo surfaces, locally served Plus Jakarta Sans, compact project and deployment cards, and matching light, dark, and system themes. Navigation adapts to mobile screens. Preview the [dark](docs/images/workspace-dark.png) and [light](docs/images/workspace-light.png) dashboard with illustrative data.
 - **Multilingual panel:** English and German with browser detection and a persistent language preference.
 
 ## Quick start

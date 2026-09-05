@@ -214,11 +214,11 @@ export function PageIntro({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 max-w-3xl">
-        {eyebrow && <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">{eyebrow}</div>}
-        <h1 className="min-w-0 text-balance text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">{title}</h1>
-        {description && <p className="mt-2 min-w-0 max-w-2xl text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{description}</p>}
+        {eyebrow && <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">{eyebrow}</div>}
+        <h1 className="min-w-0 text-balance text-[1.75rem] font-semibold tracking-[-0.045em] [overflow-wrap:anywhere]">{title}</h1>
+        {description && <p className="mt-2 min-w-0 max-w-2xl text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
