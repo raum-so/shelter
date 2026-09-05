@@ -1,4 +1,4 @@
-import '@fontsource-variable/geist/wght.css';
+import '@fontsource-variable/plus-jakarta-sans/wght.css';
 import '@fontsource-variable/geist-mono/wght.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'motion/react';

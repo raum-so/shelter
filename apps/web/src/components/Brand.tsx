@@ -33,7 +33,7 @@ export function Brand({ compact = false, inverse = false, linkTo = '/', showClai
       </span>
       {!compact && (
         <span className="grid gap-0.5 leading-none">
-          <span className="text-base font-semibold tracking-tight">{BRAND_NAME}</span>
+          <span className="text-2xl font-semibold tracking-[-0.05em]">{BRAND_NAME}</span>
           {showClaim && <span className="text-[0.65rem] font-medium tracking-[0.06em] text-muted-foreground">{BRAND_CLAIM}</span>}
         </span>
       )}

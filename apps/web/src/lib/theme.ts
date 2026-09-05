@@ -5,8 +5,8 @@ export type ResolvedTheme = Exclude<Theme, 'system'>;
 export const THEME_STORAGE_KEY = 'shelter-theme';
 
 const THEME_COLORS: Record<ResolvedTheme, string> = {
-  light: '#ffffff',
-  dark: '#0a0a0a',
+  light: '#f5f7fc',
+  dark: '#061321',
 };
 
 type ThemeStorageReader = Pick<Storage, 'getItem'>;
