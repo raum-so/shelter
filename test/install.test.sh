@@ -1042,6 +1042,32 @@ test_rollback_health_failure_leaves_restored_database_closed() {
   assert_not_contains "$MOCK_DOCKER_LOG" 'SHELTER_ROLLBACK_ACTION=promote'
 }
 
+test_dependency_provisioning_is_explicit_and_doctor_read_only() {
+  mkdir -p "$SANDBOX/ops"
+  cat > "$SANDBOX/ops/install-dependencies.sh" <<'MOCK'
+#!/bin/sh
+printf 'provisioned %s\n' "$*" >> "$MOCK_STATE_DIR/dependencies"
+exit 1
+MOCK
+  export MOCK_COMPOSE_VERSION_FAIL=1
+  run_installer '' --non-interactive --install-dependencies
+  assert_status 1
+  assert_contains "$MOCK_STATE_DIR/dependencies" 'provisioned --yes'
+  rm "$MOCK_STATE_DIR/dependencies"
+  run_installer '' --non-interactive --yes
+  assert_status 1
+  assert_file_absent "$MOCK_STATE_DIR/dependencies"
+  # Simulate terminal availability while keeping the entire test process piped.
+  sed 's/^doctor() {/doctor() { terminal_available=1;/' "$SANDBOX/install.sh" > "$SANDBOX/interactive.sh"
+  mv "$SANDBOX/interactive.sh" "$SANDBOX/install.sh"
+  run_installer '' doctor
+  assert_status 1
+  assert_file_absent "$MOCK_STATE_DIR/dependencies"
+  run_installer '' doctor --install-dependencies
+  assert_status 2
+  assert_file_absent "$MOCK_STATE_DIR/dependencies"
+}
+
 run_test() {
   local name=$1
   local function_name=$2
@@ -1061,6 +1087,7 @@ run_test() {
 
 printf 'Shelter installer black-box tests (%s)\n\n' "$INSTALL_SHELL"
 
+run_test 'prerequisite provisioning is explicit; doctor stays read-only' test_dependency_provisioning_is_explicit_and_doctor_read_only
 run_test 'parses as POSIX shell' test_posix_syntax
 run_test 'help, version, and usage errors avoid side effects' test_help_version_and_argument_errors
 run_test 'fresh non-interactive install protects bootstrap secrets' test_fresh_noninteractive_install

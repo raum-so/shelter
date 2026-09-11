@@ -327,6 +327,37 @@ export class CloudflareService {
     throw badRequest("Cloudflare ist noch nicht verbunden", "CLOUDFLARE_NOT_CONFIGURED");
   }
 
+  // Discovery never persists credentials or provisions provider resources. The
+  // final setup independently revalidates the token, account, zone and hostname.
+  async discoverToken(apiToken: string): Promise<{ accounts: CloudflareAccount[]; zones: Array<CloudflareZoneSummary & { accountId: string }> }> {
+    const client = new CloudflareClient(apiToken);
+    const verified = await client.request<{ status: string }>("GET", "/user/tokens/verify");
+    if (verified.status !== "active") throw badRequest("Der Cloudflare-Token ist nicht aktiv", "CLOUDFLARE_TOKEN_INACTIVE");
+    const accounts = new Map<string, CloudflareAccount>();
+    const zones = new Map<string, CloudflareZoneSummary & { accountId: string }>();
+    // Bound discovery to ten requests. Manual account/domain entry remains
+    // available for large accounts instead of silently returning partial data.
+    for (let page = 1; page <= 10; page += 1) {
+      const batch = await client.request<Array<CloudflareZone & { account?: CloudflareAccount }>>(
+        "GET", `/zones?status=active&per_page=50&page=${page}`
+      );
+      if (!Array.isArray(batch)) throw upstreamError("Ungültige Cloudflare-Antwort", "CLOUDFLARE_API");
+      for (const zone of batch) {
+        if (zone?.status !== "active" || !zone.account || !/^[a-f0-9]{32}$/i.test(zone.account.id)
+          || typeof zone.account.name !== "string" || !/^[a-f0-9]{32}$/i.test(zone.id) || typeof zone.name !== "string" || !/^[a-z0-9.-]+$/i.test(zone.name)) continue;
+        let name: string;
+        try { name = normalizeHostname(zone.name); } catch { continue; }
+        accounts.set(zone.account.id, { id: zone.account.id, name: zone.account.name });
+        zones.set(zone.id, { id: zone.id, name, accountId: zone.account.id });
+      }
+      if (batch.length < 50) return {
+        accounts: [...accounts.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        zones: [...zones.values()].sort((a, b) => a.name.localeCompare(b.name))
+      };
+    }
+    throw badRequest("Zu viele Domains für die automatische Auswahl. Konto-ID und Domain manuell eingeben.", "CLOUDFLARE_DISCOVERY_LIMIT");
+  }
+
   async listZones(input: { userId?: string; accountId?: string } = {}): Promise<CloudflareZoneSummary[]> {
     const { accountId, apiToken } = await this.discoveryCredentials(input.userId, input.accountId);
     return this.listActiveZonesWith(new CloudflareClient(apiToken), accountId);

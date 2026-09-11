@@ -53,6 +53,15 @@ export function registerSettingsRoutes(app: FastifyInstance, cloudflare: Cloudfl
     return { cloudflare: state };
   });
 
+  app.post<{ Body: unknown }>("/api/settings/cloudflare/discover", {
+    preHandler: requireSessionMutationAuth,
+    config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const input = z.object({ apiToken: z.string().trim().min(1).max(2048).regex(/^[\x21-\x7e]+$/) }).strict().parse(request.body);
+    reply.header("cache-control", "no-store");
+    return cloudflare.discoverToken(input.apiToken);
+  });
+
   app.post("/api/settings/cloudflare/test", { preHandler: requireSessionMutationAuth }, async () => cloudflare.test());
 
   app.post<{ Body: unknown }>("/api/settings/cloudflare/access-protection/confirmation", {

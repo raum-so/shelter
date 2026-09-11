@@ -11,6 +11,7 @@ import { isStaleClientError, recoverFromStaleClientError } from './utils/stale-c
 import { localize, useI18n } from './i18n';
 import type { Session } from './types';
 
+const SetupPage = lazy(() => import('./pages/SetupPage').then((module) => ({ default: module.SetupPage })));
 const OverviewPage = lazy(() => import('./pages/OverviewPage').then((module) => ({ default: module.OverviewPage })));
 const ProjectsPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const DeploymentPage = lazy(() => import('./pages/DeploymentPage').then((module) => ({ default: module.DeploymentPage })));
@@ -128,6 +129,8 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<AppShell session={session} />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="setup" element={<SetupPage />} />
+            <Route path="setup/:step" element={<SetupPage />} />
             <Route path="dashboard" element={<OverviewPage />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/new" element={<NewProjectPage />} />

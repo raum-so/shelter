@@ -550,6 +550,12 @@ export const api = {
     >('/api/settings/cloudflare/connection', { method: 'DELETE' }));
   },
 
+  discoverCloudflare(apiToken: string) {
+    return request<{ accounts: Array<{ id: string; name: string }>; zones: Array<{ id: string; name: string; accountId: string }> }>(
+      '/api/settings/cloudflare/discover', { method: 'POST', body: JSON.stringify({ apiToken }) }
+    );
+  },
+
   testCloudflare() {
     return request<CloudflareTestResult>('/api/settings/cloudflare/test', { method: 'POST' });
   },

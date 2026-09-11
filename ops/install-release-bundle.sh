@@ -129,6 +129,14 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
+# Provision only when explicitly requested; dry-run returned before this point.
+for installer_option in "$@"; do
+  if [ "$installer_option" = --install-dependencies ]; then
+    sh "$verified_bundle_root/ops/install-dependencies.sh" --yes
+    break
+  fi
+done
+
 command -v docker >/dev/null 2>&1 || {
   shelter_release_error "Docker is required to install a release bundle"
   exit 1
@@ -333,6 +341,12 @@ if [ "$sync_release_payloads" -eq 1 ]; then
   copy_verified_payload .env.example 644 || exit 1
   copy_verified_payload compose.yaml 644 || exit 1
   copy_verified_payload install.sh 755 || exit 1
+  # Older authenticated bundles do not contain these additive entry points.
+  for optional_payload in bootstrap.sh ops/install-dependencies.sh; do
+    if grep -Fq "  $optional_payload" "$verified_bundle_root/release.checksums"; then
+      copy_verified_payload "$optional_payload" 755 || exit 1
+    fi
+  done
   copy_verified_payload ops/create-release-manifest.sh 755 || exit 1
   copy_verified_payload ops/download-release.sh 755 || exit 1
   copy_verified_payload ops/install-release-bundle.sh 755 || exit 1

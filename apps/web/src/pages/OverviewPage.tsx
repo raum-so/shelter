@@ -286,6 +286,7 @@ export function OverviewPage() {
         </Alert>
       )}
 
+      {projectCount === 0 && <Card><CardHeader><CardTitle>{t('Welcome to Shelter', 'Willkommen bei Shelter')}</CardTitle><CardDescription>{t('Connect your domain and deploy your first project with the setup guide.', 'Verbinde deine Domain und deploye dein erstes Projekt mit dem Einrichtungsassistenten.')}</CardDescription></CardHeader><CardContent><Button asChild><Link to="/setup">{t('Start setup', 'Einrichtung starten')}<ArrowRight aria-hidden="true" /></Link></Button></CardContent></Card>}
       <ProductionSafetyAlert accessProtection={accessProtection} />
 
       {attention && (
