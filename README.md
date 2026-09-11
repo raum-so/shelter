@@ -66,30 +66,62 @@ Most deployment platforms trade ownership for convenience. Traditional self-host
 
 ## Quick start
 
-- Ubuntu Server 24.04 or 26.04 LTS
-- Docker Engine with Buildx and Docker Compose v2
-- `openssl`
-- recommended: 2 vCPU, 4 GB RAM, and 40 GB SSD
+Use an Ubuntu Server 24.04 or 26.04 LTS VPS (amd64 or arm64). We recommend
+2 vCPU, 4 GB RAM and 40 GB SSD. Run the bootstrap from a trusted release as
+root on the VPS:
 
 ```sh
-git clone https://github.com/raum-so/shelter.git
-cd shelter
-./install.sh doctor
-./install.sh
+curl -fsSLo shelter-bootstrap.sh https://raw.githubusercontent.com/raum-so/shelter/v0.6.0/bootstrap.sh
+sudo sh shelter-bootstrap.sh
 ```
 
-The installer checks the VPS, asks for the initial administrator and local panel port, builds Shelter, and verifies the complete control plane. From your computer, open the SSH tunnel printed at the end:
+The bootstrap explains its plan, installs missing verification tools, verifies
+the latest immutable release and its asset attestations, installs missing Docker
+prerequisites, and starts the release installer. It does not build Shelter on
+the VPS. Review the downloaded bootstrap before running it; HTTPS delivery of
+that initial script is the trust entry point. Use `--tag v0.6.0` to select an
+exact release instead of the latest stable release.
+
+GitHub CLI authentication is required by the release verification tools. If
+needed, the interactive bootstrap opens GitHub's device login instructions.
+This login verifies release downloads; the separate, repository-scoped GitHub
+App for deployments is configured later. For unattended provisioning,
+authenticate `gh` first or supply `GH_TOKEN` through a secret manager and pass
+`--yes`. Never put tokens or passwords into command arguments.
+
+The default installation directory is `/opt/shelter`; use `--directory` to
+choose another unused absolute directory. If installation stops after the
+verified bundle has been written, resume inside that directory with:
+
+```sh
+sudo ./ops/install-release-bundle.sh -- --install-dependencies
+```
+
+From your computer, use the SSH tunnel printed by the installer:
 
 ```sh
 ssh -N -L 7080:127.0.0.1:7080 USER@YOUR-VPS
 ```
 
-Open `http://127.0.0.1:7080`, sign in, and then [connect Cloudflare](#connect-cloudflare) to publish the panel and projects. A Cloudflare account and active zone are needed for publishing, not for the local installation.
+Open `http://127.0.0.1:7080`, sign in and choose **Setup guide**. It guides you
+through Cloudflare, the panel domain, Cloudflare Access, optional GitHub and
+your first deployment. Progress is derived from the saved configuration and
+running projects, so it survives browser changes and interrupted setup.
+See the [setup guide screenshot](docs/images/setup-guide-light.png), captured
+with a disposable local account and no provider connections.
 
-The commands above deliberately build a reviewed checkout locally. Production
-operators should prefer a [verified release bundle](docs/RELEASES.md), which
-installs the signed control-plane image by digest without rebuilding it on the
-VPS.
+A Cloudflare account with an active zone is required for publishing, not for
+the local installation. GitHub is optional: uploads and public Git URLs work too.
+
+For a source build from a reviewed checkout:
+
+```sh
+git clone https://github.com/raum-so/shelter.git
+cd shelter
+sudo ./install.sh --install-dependencies
+```
+
+See the [release guide](docs/RELEASES.md) for production updates and verification.
 
 ## API and CLI
 
@@ -163,7 +195,7 @@ build:
 
 For a fresh installation it:
 
-1. checks Linux, Docker, Compose v2, Buildx, required host tools, architecture, and available disk space,
+1. offers to install missing Docker, Compose v2, Buildx and OpenSSL on supported Ubuntu hosts, then checks host tools, architecture and available disk space,
 2. asks for the administrator email, loopback panel port, and a confirmed password of at least 16 characters,
 3. shows the installation plan before changing the system,
 4. creates `.env` atomically with mode `0600` and a random `APP_SECRET`,
@@ -177,6 +209,23 @@ For production, follow the [release guide](docs/RELEASES.md) instead. The
 release helper cryptographically verifies the immutable GitHub Release and its
 downloaded asset before reading the archive, then installs the exact OCI digest
 recorded in the checked bundle.
+
+### Automatic host prerequisites
+
+`--install-dependencies` explicitly approves installing missing prerequisites.
+Without this flag, an interactive source installation asks before provisioning;
+non-interactive installations retain their previous check-only behavior.
+`--yes` alone does not authorize prerequisite installation in `install.sh`.
+The dependency helper supports Ubuntu 24.04/26.04 on amd64/arm64 and uses the
+official Docker apt repository with `--no-remove`. It refuses competing distro
+Docker/Podman/containerd packages and unmanaged Docker installations instead of
+replacing them. Existing Docker daemons are not restarted, and users are not
+silently added to the root-equivalent Docker group. Run as root or with sudo.
+
+Package installation is a host change and is not reverted by Shelter rollback.
+The helper does not remove existing packages or upgrade the distribution. Keep
+your VPS snapshot/backup policy; review any package-manager failure before
+retrying. `doctor` never installs packages or changes services.
 
 ### Check the server with `doctor`
 
@@ -243,6 +292,25 @@ Then open `http://127.0.0.1:7080`. If local port 7080 is occupied, use `-L 7081:
 
 ## Connect Cloudflare
 
+The recommended self-hosted path is **Setup guide → Cloudflare → Connect with
+an API token**. Open **Create Cloudflare token** to prefill Account Read, Zone
+Read, DNS Edit and Cloudflare Tunnel Edit. Restrict the token to the intended
+account and zones before creating it. Paste it into Shelter and choose **Find
+my domains**. Shelter reads active zones and their account names without
+persisting the token or creating resources. Choose a zone to populate the
+account ID and proposed `panel.<zone>` hostname, then connect to provision the
+tunnel and routing. You can edit the proposed hostname; DNS collisions are
+still checked when saving. The tunnel name is under Advanced.
+
+No OAuth-client registration, `.env` editing or callback migration is required
+for this token flow. Discovery is bounded to 500 zone entries and returns an
+error rather than partial results at the limit. If no active zones are visible,
+finish Cloudflare nameserver activation and verify the token's zone access.
+Manual account-ID and hostname entry remain available. Saved tokens remain
+encrypted on the VPS; the discovery response never returns the token.
+
+Private OAuth remains supported for operators who already configure a client:
+
 Cloudflare is the next step after the local panel is healthy; it is not required to finish `./install.sh`. Shelter supports Cloudflare self-managed OAuth using the Authorization Code flow, refresh tokens, PKCE `S256`, and confidential-client token exchange with `client_secret_basic`. The browser never receives the client secret or access and refresh tokens.
 
 ### Create one private OAuth client
@@ -302,9 +370,9 @@ Shelter creates a dedicated remotely managed tunnel with a catch-all origin of `
 
 Access and refresh tokens are encrypted under `APP_SECRET`. Disconnecting Cloudflare revokes the management connection and removes credentials from Shelter. The connector intentionally remains online until its tunnel or connector token is separately rotated or deleted.
 
-### API-token fallback
+### API-token configuration
 
-If OAuth is unavailable, create a narrowly scoped Cloudflare API token with the same four permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
+For the guided token path, create a narrowly scoped Cloudflare API token with the same four permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
 
 ### Cloudflare Access
 

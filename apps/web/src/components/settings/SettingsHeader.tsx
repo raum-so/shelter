@@ -59,7 +59,7 @@ export function SettingsHeader({
         eyebrow={t('Settings', 'Einstellungen')}
         title={copy[section].title}
         description={copy[section].description}
-        actions={status}
+        actions={<div className="flex flex-wrap items-center gap-3">{status}<Button asChild variant="outline"><Link to="/setup">{t('Setup guide', 'Einrichtung')}</Link></Button></div>}
       />
       <nav className="flex gap-1 overflow-x-auto border-b pb-px" aria-label={t('Settings sections', 'Einstellungsbereiche')}>
         {items.map(({ key, to, label, icon: Icon }) => {

@@ -52,6 +52,8 @@ import {
   trustedGitHubAppUrl,
 } from '../utils/github';
 import { githubCallbackNotice } from '../utils/github-callback';
+import { cloudflareRoutingChanged, normalizePanelHostname as normalizeHostname } from '../utils/cloudflare-form';
+import { cloudflareTokenTemplateUrl } from '../utils/cloudflare-token';
 import { submitGitHubManifest } from '../utils/github-manifest';
 import { currentLocale, localize, useI18n } from '@/i18n';
 import type { CloudflareSettings } from '../types';
@@ -90,10 +92,6 @@ const emptyPasswordForm: PasswordFormState = {
   newPassword: '',
   confirmation: '',
 };
-
-function normalizeHostname(value: string) {
-  return value.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0]?.replace(/\.$/, '') ?? '';
-}
 
 function accountIdError(value: string) {
   const accountId = value.trim();
@@ -227,6 +225,18 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     queryKey: ['cloudflare-settings'],
     queryFn: api.cloudflare,
     enabled: section === 'cloudflare',
+  });
+  const discoverToken = useMutation({
+    mutationFn: () => api.discoverCloudflare(form.apiToken.trim()),
+    onSuccess: (result) => {
+      if (result.accounts.length === 1) {
+        const accountId = result.accounts[0]!.id;
+        const zones = result.zones.filter((zone) => zone.accountId === accountId);
+        setForm((current) => ({ ...current, accountId,
+          panelDomain: current.panelDomain || (zones.length === 1 ? `panel.${zones[0]!.name}` : ''),
+        }));
+      }
+    },
   });
   const githubSettings = useQuery({
     queryKey: ['github-settings'],
@@ -522,7 +532,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     }),
   });
 
-  const cloudflareBusy = save.isPending
+  const cloudflareBusy = discoverToken.isPending || save.isPending
     || startOAuth.isPending
     || test.isPending
     || confirmAccessProtection.isPending
@@ -605,9 +615,11 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
   const initialAccountId = settings.data?.accountId
     ?? (settings.data?.accounts.length === 1 ? settings.data.accounts[0]?.id : undefined)
     ?? '';
-  const cloudflareConfigDirty = form.accountId.trim().toLowerCase() !== initialAccountId.trim().toLowerCase()
-    || form.tunnelName.trim() !== (settings.data?.tunnelName ?? '').trim()
-    || normalizeHostname(form.panelDomain) !== normalizeHostname(settings.data?.panelDomain ?? '');
+  const cloudflareConfigDirty = cloudflareRoutingChanged(form, {
+    accountId: initialAccountId,
+    tunnelName: settings.data?.tunnelName,
+    panelDomain: settings.data?.panelDomain,
+  });
   const canSaveOAuth = Boolean(
     authorized
     && !cloudflareErrors.accountId
@@ -1230,7 +1242,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
             </Card>
           )}
 
-          {!settings.data?.oauthAvailable && (
+          {!settings.data?.oauthAvailable && configured && settings.data?.authMethod === 'oauth' && (
             <Alert role="note" className="items-start p-4">
               <AlertTriangle aria-hidden="true" />
               <AlertTitle>{t('Configure the OAuth client on the server once', 'OAuth-Client einmalig auf dem Server einrichten')}</AlertTitle>
@@ -1378,21 +1390,43 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
 
           {(!configured || settings.data?.authMethod === 'api_token') && (
             <Card className="gap-0 py-0">
-              <Accordion type="single" collapsible>
+              <Accordion type="single" collapsible defaultValue={!settings.data?.oauthAvailable && !configured ? "token" : undefined}>
                 <AccordionItem value="token" className="border-0">
                   <AccordionTrigger className="px-5 py-4 hover:no-underline sm:px-6">
                     <span className="flex items-center gap-3 text-left">
                       <KeyRound size={17} className="text-muted-foreground" aria-hidden="true" />
-                      <span><strong className="block text-sm">{t('Manual connection', 'Manuelle Verbindung')}</strong><small className="block text-xs font-normal text-muted-foreground">{t('Fallback with a scoped API token', 'Fallback mit begrenztem API-Token')}</small></span>
+                      <span><strong className="block text-sm">{t('Connect with an API token', 'Mit API-Token verbinden')}</strong><small className="block text-xs font-normal text-muted-foreground">{t('Guided setup without editing configuration files', 'Geführte Einrichtung ohne Konfigurationsdateien')}</small></span>
                   </span>
                 </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5 sm:px-6 sm:pb-6">
+                <AccordionContent className="h-auto px-5 pb-5 sm:px-6 sm:pb-6">
                   <Separator className="mb-5" />
                   <form className="grid gap-5" onSubmit={submitTokenFallback}>
                     <InlineNotice tone="warning" title={t('Use a minimally scoped token', 'Minimal berechtigten Token verwenden')}>
-                      {t('Use this path only when OAuth is unavailable. Create a dedicated, minimally scoped token for Shelter.', 'Nutze diesen Weg nur, wenn OAuth nicht verfügbar ist. Erstelle einen eigenen, minimal berechtigten Token nur für Shelter.')}
+                      {t('Open the template, keep Account Read, Zone Read, DNS Edit and Cloudflare Tunnel Edit, and restrict resources to your account and the domains Shelter should manage. Then paste the token below.', 'Öffne die Vorlage, behalte Account Read, Zone Read, DNS Edit und Cloudflare Tunnel Edit und begrenze die Ressourcen auf deinen Account und die Domains für Shelter. Füge anschließend den Token unten ein.')}
                     </InlineNotice>
+                    <Button variant="outline" asChild className="w-fit"><a href={cloudflareTokenTemplateUrl(form.accountId)} target="_blank" rel="noreferrer">{t('1. Create Cloudflare token', '1. Cloudflare-Token erstellen')} <ExternalLink aria-hidden="true" /></a></Button>
                     <div className="grid gap-4 md:grid-cols-2">
+                      <Field
+                        label={t('API token', 'API-Token')}
+                        name="apiToken"
+                        type="password"
+                        autoComplete="new-password"
+                        value={form.apiToken}
+                        onChange={(event) => { discoverToken.reset(); update('apiToken', event.target.value); }}
+                        placeholder={settings.data?.hasApiToken ? t('••••••••••••  unchanged', '••••••••••••  unverändert') : t('Cloudflare API token', 'Cloudflare-API-Token')}
+                        hint={settings.data?.hasApiToken ? t('Leave empty to keep the saved token', 'Leer lassen, um den gespeicherten Token zu behalten') : t('Stored encrypted on your VPS', 'Wird verschlüsselt auf deinem VPS gespeichert')}
+                        disabled={cloudflareBusy}
+                        required={!settings.data?.hasApiToken}
+                      />
+                      <div className="flex flex-col gap-3 md:col-span-2">
+                        <Button type="button" variant="outline" className="w-fit" disabled={!form.apiToken.trim() || cloudflareBusy} loading={discoverToken.isPending} onClick={() => discoverToken.mutate()}>{t('2. Find my domains', '2. Meine Domains finden')}</Button>
+                        {discoverToken.isError && <InlineNotice tone="error" title={t('Domain discovery failed', 'Domains konnten nicht geladen werden')}>{errorMessage(discoverToken.error, t('Check the token permissions or enter the account ID and hostname manually.', 'Prüfe die Token-Berechtigungen oder gib Konto-ID und Hostnamen manuell ein.'))}</InlineNotice>}
+                        {discoverToken.isSuccess && discoverToken.data.zones.length === 0 && <InlineNotice tone="warning" title={t('No active domains found', 'Keine aktiven Domains gefunden')}>{t('Add a domain to Cloudflare, finish its nameserver setup and grant this token access to the zone. Then try again.', 'Füge eine Domain zu Cloudflare hinzu, schließe die Nameserver-Einrichtung ab und erlaube diesem Token den Zugriff auf die Zone. Versuche es danach erneut.')}</InlineNotice>}
+                        {discoverToken.data && discoverToken.data.zones.length > 0 && <SelectField label={t('Domain for this panel', 'Domain für dieses Panel')} value={discoverToken.data.zones.find((zone) => zone.accountId === form.accountId && form.panelDomain === `panel.${zone.name}`)?.id ?? ''} disabled={cloudflareBusy} onChange={(event) => {
+                          const zone = discoverToken.data.zones.find((item) => item.id === event.target.value);
+                          if (zone) { update('accountId', zone.accountId); update('panelDomain', `panel.${zone.name}`); }
+                        }}><option value="">{t('Choose a domain to fill the fields below', 'Domain zum Ausfüllen der Felder wählen')}</option>{discoverToken.data.zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name} · {discoverToken.data.accounts.find((account) => account.id === zone.accountId)?.name}</option>)}</SelectField>}
+                      </div>
                       <Field
                         label={t('Account ID', 'Konto-ID')}
                         name="tokenAccountId"
@@ -1403,19 +1437,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                         disabled={cloudflareBusy}
                         required
                       />
-                      <Field
-                        label={t('API token', 'API-Token')}
-                        name="apiToken"
-                        type="password"
-                        autoComplete="new-password"
-                        value={form.apiToken}
-                        onChange={(event) => update('apiToken', event.target.value)}
-                        placeholder={settings.data?.hasApiToken ? t('••••••••••••  unchanged', '••••••••••••  unverändert') : t('Cloudflare API token', 'Cloudflare-API-Token')}
-                        hint={settings.data?.hasApiToken ? t('Leave empty to keep the saved token', 'Leer lassen, um den gespeicherten Token zu behalten') : t('Stored encrypted on your VPS', 'Wird verschlüsselt auf deinem VPS gespeichert')}
-                        disabled={cloudflareBusy}
-                        required={!settings.data?.hasApiToken}
-                      />
-                      <Field label={t('Tunnel name', 'Tunnel-Name')} name="tokenTunnelName" value={form.tunnelName} onChange={(event) => update('tunnelName', event.target.value)} placeholder="shelter" error={cloudflareTouched.tunnelName ? cloudflareErrors.tunnelName : undefined} disabled={cloudflareBusy} required />
+                      <details className="md:col-span-2"><summary className="cursor-pointer text-sm">{t('Advanced: tunnel name', 'Erweitert: Tunnelname')}</summary><div className="pt-3"><Field label={t('Tunnel name', 'Tunnel-Name')} name="tokenTunnelName" value={form.tunnelName} onChange={(event) => update('tunnelName', event.target.value)} placeholder="shelter" error={cloudflareTouched.tunnelName ? cloudflareErrors.tunnelName : undefined} disabled={cloudflareBusy} required /></div></details>
                       <Field label={t('Panel domain', 'Panel-Domain')} name="tokenPanelDomain" value={form.panelDomain} onChange={(event) => update('panelDomain', event.target.value)} placeholder="panel.example.com" error={cloudflareTouched.panelDomain ? cloudflareErrors.panelDomain : undefined} disabled={cloudflareBusy} required />
                     </div>
                     <div className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
@@ -1433,11 +1455,8 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                       </InlineNotice>
                     )}
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <Button variant="outline" asChild className="w-full sm:w-auto">
-                        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">{t('Create token', 'Token erstellen')} <ExternalLink aria-hidden="true" /></a>
-                      </Button>
                       <Button type="submit" loading={save.isPending && save.variables === 'api_token'} disabled={!canSaveToken || cloudflareBusy} className="w-full sm:w-auto">
-                        {save.isPending && save.variables === 'api_token' ? t('Saving token …', 'Token wird gespeichert …') : t('Save token', 'Token speichern')}
+                        {save.isPending && save.variables === 'api_token' ? t('Saving token …', 'Token wird gespeichert …') : t('3. Connect and create routing', '3. Verbinden und Routing einrichten')}
                       </Button>
                     </div>
                   </form>
@@ -1452,7 +1471,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
           <h2 id="cloudflare-help-title" className="text-base font-semibold">{t('How it works', 'So funktioniert es')}</h2>
           <ol className="mt-4 grid gap-4">
             {[
-              ['1.', t('Sign in with Cloudflare', 'Bei Cloudflare anmelden'), t('You confirm access directly on Cloudflare.', 'Du bestätigst den Zugriff direkt auf der Cloudflare-Seite.')],
+              ['1.', t('Connect Cloudflare', 'Cloudflare verbinden'), t('Create a scoped token using the template, or use an already configured OAuth connection.', 'Erstelle über die Vorlage einen begrenzten Token oder nutze eine bereits konfigurierte OAuth-Verbindung.')],
               ['2.', t('Choose account and hostname', 'Account und Hostname wählen'), t('Shelter lists available accounts and configures routing.', 'Shelter zeigt verfügbare Accounts an und richtet das Routing ein.')],
               ['3.', t('Use the tunnel', 'Tunnel verwenden'), t('The panel and projects remain reachable without a public VPS port.', 'Panel und Projekte bleiben ohne öffentlich offenen VPS-Port erreichbar.')],
               ['4.', t('Protect the panel with Access', 'Panel mit Access schützen'), t('Add a Self-hosted Access application for the panel hostname and confirm the checklist in Shelter.', 'Lege eine Self-hosted-Access-Anwendung für den Panel-Hostnamen an und bestätige anschließend die Checkliste in Shelter.')],
@@ -1469,11 +1488,11 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
 
           <a
             className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
-            href="https://dash.cloudflare.com/?to=%2F%3Aaccount%2Foauth-clients"
+            href={settings.data?.oauthAvailable ? "https://dash.cloudflare.com/?to=%2F%3Aaccount%2Foauth-clients" : cloudflareTokenTemplateUrl(form.accountId)}
             target="_blank"
             rel="noreferrer"
           >
-            {t('Open OAuth clients', 'OAuth-Clients öffnen')} <ExternalLink className="size-4" aria-hidden="true" />
+            {settings.data?.oauthAvailable ? t('Open OAuth clients', 'OAuth-Clients öffnen') : t('Open token template', 'Token-Vorlage öffnen')} <ExternalLink className="size-4" aria-hidden="true" />
           </a>
 
           <Separator className="my-5" />

@@ -247,3 +247,22 @@ If exposure is suspected:
 7. Treat possible Docker-socket or root access as a complete VPS compromise and rebuild from a clean image.
 
 Do not change `APP_SECRET` impulsively. Plan a migration or controlled reconfiguration first, because changing it invalidates all data encrypted under that key.
+
+## Guided setup and host provisioning
+
+The optional bootstrap script is the initial operator-trusted executable. It
+verifies GitHub release and asset attestations before reading helper code from
+the bundle; the existing downloader then validates the complete archive and
+payload manifest. Host prerequisite installation requires an interactive plan
+confirmation or an explicit provisioning flag. It does not remove conflicting
+Docker packages, expose the Docker socket to the API, or open public host ports.
+Package-manager changes are outside the application rollback snapshot.
+
+Cloudflare token discovery requires an administrator session and CSRF token,
+is rate-limited, accepts a bounded printable credential and performs bounded
+read-only provider requests. It never saves the submitted credential. Final
+setup revalidates credentials and ownership before provisioning. Token template
+links contain permission metadata only. The setup guide's Access status remains
+an administrator acknowledgement for the exact hostname, not automatic policy
+verification. Public shared OAuth and automated Access policy creation are not
+part of this self-hosted flow.

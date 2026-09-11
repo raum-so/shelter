@@ -77,6 +77,8 @@ setup_sandbox() {
   cp "$REPO_ROOT/.env.example" "$RELEASE_BUNDLE/.env.example"
   cp "$REPO_ROOT/compose.yaml" "$RELEASE_BUNDLE/compose.yaml"
   cp "$REPO_ROOT/install.sh" "$RELEASE_BUNDLE/install.sh"
+  cp "$REPO_ROOT/bootstrap.sh" "$RELEASE_BUNDLE/bootstrap.sh"
+  cp "$REPO_ROOT/ops/install-dependencies.sh" "$RELEASE_BUNDLE/ops/install-dependencies.sh"
   cp "$REPO_ROOT/ops/create-release-manifest.sh" "$RELEASE_BUNDLE/ops/create-release-manifest.sh"
   cp "$REPO_ROOT/ops/download-release.sh" "$RELEASE_BUNDLE/ops/download-release.sh"
   cp "$REPO_ROOT/ops/install-release-bundle.sh" "$RELEASE_BUNDLE/ops/install-release-bundle.sh"

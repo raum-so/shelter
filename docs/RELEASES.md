@@ -4,6 +4,27 @@ Shelter production releases are built once in GitHub Actions and installed by
 content digest. The release path is separate from the source-build path used
 for local development.
 
+## Guided installation
+
+Starting with 0.6.0, `bootstrap.sh` provides the fresh-server entry point. The
+operator trusts the initial script, then it uses GitHub CLI to verify release
+and asset attestations before streaming the two fixed downloader helper files
+from the archive. The authenticated downloader performs the existing complete
+archive/manifest checks before the installation directory appears. This repeats
+the small bundle download deliberately to reuse the hardened verifier.
+
+The verified bundle contains `ops/install-dependencies.sh`; only after release
+verification does bootstrap execute that helper. `ops/install-release-bundle.sh
+-- --install-dependencies` also supports explicit provisioning before pulling
+the release image. Dry runs remain non-mutating. Existing immutable releases
+without these optional files remain verifiable and installable normally.
+
+The bootstrap requires GitHub CLI authentication for attestation APIs. It can
+install the CLI from GitHub's signed apt repository and guide interactive device
+login. It refuses existing installation directories: resume the verified
+bundle installer there or use `ops/deploy-release.sh` for updates. No production
+update path, rollback snapshot or immutable remote staging rule changes.
+
 ## Security guarantees
 
 A published release has all of the following properties:

@@ -78,6 +78,8 @@ for relative_path in \
   .env.example \
   compose.yaml \
   install.sh \
+  bootstrap.sh \
+  ops/install-dependencies.sh \
   ops/create-release-manifest.sh \
   ops/download-release.sh \
   ops/install-release-bundle.sh \
@@ -101,6 +103,8 @@ for relative_path in \
   .env.example \
   compose.yaml \
   install.sh \
+  bootstrap.sh \
+  ops/install-dependencies.sh \
   ops/create-release-manifest.sh \
   ops/download-release.sh \
   ops/install-release-bundle.sh \
