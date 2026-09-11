@@ -65,6 +65,8 @@ setup_sandbox() {
   mkdir -p "$BUNDLE/ops/lib" "$MOCK_BIN" "$MOCK_STATE_DIR"
   cp "$REPO_ROOT/.env.example" "$BUNDLE/.env.example"
   cp "$REPO_ROOT/compose.yaml" "$BUNDLE/compose.yaml"
+  cp "$REPO_ROOT/bootstrap.sh" "$BUNDLE/bootstrap.sh"
+  cp "$REPO_ROOT/ops/install-dependencies.sh" "$BUNDLE/ops/install-dependencies.sh"
   cp "$REPO_ROOT/ops/create-release-manifest.sh" "$BUNDLE/ops/create-release-manifest.sh"
   cp "$REPO_ROOT/ops/download-release.sh" "$BUNDLE/ops/download-release.sh"
   cp "$REPO_ROOT/ops/install-release-bundle.sh" "$BUNDLE/ops/install-release-bundle.sh"

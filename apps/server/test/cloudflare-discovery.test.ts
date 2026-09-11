@@ -476,3 +476,61 @@ describe("Cloudflare zone and hostname discovery", () => {
     expect(providerFetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Cloudflare token onboarding", () => {
+  it("discovers active zones and their accounts without persisting a token or creating resources", async () => {
+    const { app, database, sessionCookie, csrfToken } = await discoveryApp();
+    const token = "disposable-test-token";
+    const account = { id: "a".repeat(32), name: "Example" };
+    const provider = vi.fn(async (url: string, init: RequestInit) => {
+      expect(init.method).toBe("GET");
+      expect(init.headers).toMatchObject({ authorization: `Bearer ${token}` });
+      return Response.json({ success: true, result: url.endsWith("/verify") ? { status: "active" } : [
+        { id: "b".repeat(32), name: "example.com", status: "active", account },
+        { id: "c".repeat(32), name: "pending.example", status: "pending", account },
+        { id: "d".repeat(32), name: "https://invalid.example", status: "active", account },
+      ] });
+    });
+    vi.stubGlobal("fetch", provider);
+    const result = await app.inject({ method: "POST", url: "/api/settings/cloudflare/discover",
+      cookies: { shelter_session: sessionCookie }, headers: { "x-csrf-token": csrfToken }, payload: { apiToken: token } });
+    expect(result.statusCode).toBe(200);
+    expect(result.headers["cache-control"]).toBe("no-store");
+    expect(result.json()).toEqual({ accounts: [account], zones: [{ id: "b".repeat(32), name: "example.com", accountId: account.id }] });
+    expect(result.body).not.toContain(token);
+    expect(database.getSetting("cloudflare.api_token")).toBeUndefined();
+    expect(database.getSetting("cloudflare.tunnel_id")).toBeUndefined();
+    expect(provider).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires a session, CSRF and a bounded printable token before contacting Cloudflare", async () => {
+    const { app, sessionCookie, csrfToken } = await discoveryApp();
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", provider);
+    const unauthenticated = await app.inject({ method: "POST", url: "/api/settings/cloudflare/discover", payload: { apiToken: "test" } });
+    expect(unauthenticated.statusCode).toBe(401);
+    const noCsrf = await app.inject({ method: "POST", url: "/api/settings/cloudflare/discover", cookies: { shelter_session: sessionCookie }, payload: { apiToken: "test" } });
+    expect(noCsrf.statusCode).toBe(403);
+    for (const apiToken of ["", "a".repeat(2049), "token\r\ninjected"]) {
+      const result = await app.inject({ method: "POST", url: "/api/settings/cloudflare/discover", cookies: { shelter_session: sessionCookie }, headers: { "x-csrf-token": csrfToken }, payload: { apiToken } });
+      expect(result.statusCode).toBe(400);
+    }
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("rejects inactive tokens and bounds pagination", async () => {
+    const { app, sessionCookie, csrfToken } = await discoveryApp();
+    const call = () => app.inject({ method: "POST", url: "/api/settings/cloudflare/discover", cookies: { shelter_session: sessionCookie }, headers: { "x-csrf-token": csrfToken }, payload: { apiToken: "test" } });
+    const provider = vi.fn(async () => Response.json({ success: true, result: { status: "expired" } }));
+    vi.stubGlobal("fetch", provider);
+    expect((await call()).statusCode).toBe(400);
+    expect(provider).toHaveBeenCalledTimes(1);
+    provider.mockReset();
+    provider.mockImplementation(async () => Response.json({ success: true, result: { status: "active" } }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json({ success: true, result: url.endsWith("/verify") ? { status: "active" } : Array.from({ length: 50 }, () => ({ id: "b".repeat(32), name: "example.com", status: "active", account: { id: "a".repeat(32), name: "Test" } })) })));
+    const result = await call();
+    expect(result.statusCode).toBe(400);
+    expect(result.body).toContain("CLOUDFLARE_DISCOVERY_LIMIT");
+    expect(fetch).toHaveBeenCalledTimes(11);
+  });
+});

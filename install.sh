@@ -24,6 +24,7 @@ no_color=0
 verbose=0
 no_pull=0
 bootstrap_empty_volume=0
+install_dependencies=0
 
 terminal_available=0
 terminal_echo_disabled=0
@@ -184,6 +185,7 @@ Options:
   --bootstrap-empty-volume     Explicitly bootstrap an empty existing data volume
   --non-interactive            Never prompt; implies --yes
   --yes                        Accept the installation summary without prompting
+  --install-dependencies       Approve installing missing host prerequisites
   --no-pull                    Reuse locally cached base and runtime images
   --verbose                    Stream Docker output instead of showing compact progress
   --no-color                   Disable ANSI colors (NO_COLOR is also respected)
@@ -244,6 +246,9 @@ while [ "$#" -gt 0 ]; do
     --yes|-y)
       assume_yes=1
       ;;
+    --install-dependencies)
+      install_dependencies=1
+      ;;
     --no-pull)
       no_pull=1
       ;;
@@ -269,6 +274,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$mode" != install ]; then
+  [ "$install_dependencies" -eq 0 ] || usage_error "--install-dependencies is only available for installation"
   [ -z "$admin_email_arg" ] || usage_error "--email is only available for installation"
   [ "$panel_port_given" -eq 0 ] || usage_error "--panel-port is only available for installation"
   [ "$password_stdin" -eq 0 ] || usage_error "--password-stdin is only available for installation"
@@ -1779,6 +1785,13 @@ rollback_shelter() {
 
 install_shelter() {
   print_banner
+  if ! command -v docker >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || { [ "$release_install" -eq 0 ] && ! docker buildx version >/dev/null 2>&1; }; then
+    if [ "$install_dependencies" -eq 1 ]; then
+      sh "$script_dir/ops/install-dependencies.sh" --yes
+    elif [ "$non_interactive" -eq 0 ] && [ "$terminal_available" -eq 1 ]; then
+      sh "$script_dir/ops/install-dependencies.sh"
+    fi
+  fi
   preflight
   check_release_sync_complete
   acquire_install_lock

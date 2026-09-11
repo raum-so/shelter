@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Check as CheckIcon,
   ChevronUp,
   Cloud,
   FolderKanban,
@@ -74,6 +75,7 @@ export function AppShell({ session }: { session: Session }) {
   const navigation = useMemo(() => [
     { to: '/dashboard', label: t('Dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
     { to: '/projects', label: t('Projects', 'Projekte'), icon: FolderKanban, end: false },
+    { to: '/setup', label: t('Setup guide', 'Einrichtung'), icon: CheckIcon, end: false },
     { to: '/server', label: t('Server', 'Server'), icon: Gauge, end: true },
     { to: '/settings/cloudflare', label: t('Settings', 'Einstellungen'), icon: Settings2, end: false },
   ], [t]);
@@ -103,6 +105,7 @@ export function AppShell({ session }: { session: Session }) {
     // project or deployment name once the corresponding query resolves.
     if (location.pathname.startsWith('/projects/')) return null;
     if (location.pathname === '/server') return t('Server metrics', 'Servermetriken');
+    if (location.pathname.startsWith('/setup')) return t('Setup guide', 'Einrichtung');
     if (location.pathname === '/settings/cloudflare') return t('Cloudflare & routing', 'Cloudflare & Routing');
     if (location.pathname === '/settings/github') return 'GitHub';
     if (location.pathname === '/settings/api') return 'API & CLI';
