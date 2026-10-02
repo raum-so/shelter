@@ -26,6 +26,7 @@ import { panelHostnames } from "./services/panel-domains.js";
 import { reconcileRouting } from "./services/routing.js";
 import { registerUploadRoutes, UploadService } from "./services/uploads.js";
 import { PreviewDnsReconciler } from "./services/preview-dns-reconciler.js";
+import { brandHtml, registerBrandingRoutes } from "./services/branding.js";
 import { registerSiteAccessRoutes } from "./services/site-access.js";
 
 export async function createApp(config: AppConfig, database = new Database(config)): Promise<FastifyInstance> {
@@ -59,7 +60,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
   });
 
   app.addHook("onSend", async (_request, reply, payload) => {
-    reply.header("server", "Shelter");
+    reply.header("server", "web");
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "strict-origin-when-cross-origin");
     reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
@@ -71,62 +72,6 @@ export async function createApp(config: AppConfig, database = new Database(confi
     }
     return payload;
   });
-
-  installAuthHook(app, database);
-  const uploads = new UploadService(config, database);
-  const cloudflare = new CloudflareService(config, database);
-  const github = new GitHubService(config, database);
-  const previewDns = new PreviewDnsReconciler(database, cloudflare);
-  registerAuthRoutes(app, config, database);
-  registerSiteAccessRoutes(app, config, database);
-  registerOpenApiRoutes(app);
-  registerApiTokenRoutes(app, database);
-  registerUploadRoutes(app, uploads);
-  registerProjectRoutes(app, config, database, uploads, cloudflare, github);
-  registerPullRequestPreviewRoutes(app, config, database, cloudflare, github);
-  registerProjectObservabilityRoutes(app, config, database);
-  registerDeploymentRoutes(app, database);
-  registerSettingsRoutes(app, cloudflare);
-  registerGithubRoutes(app, github);
-  registerServerMetricsRoutes(app, config, database);
-  previewDns.start();
-  app.addHook("onClose", async () => previewDns.stop());
-
-  app.get("/api/healthz", async () => {
-    const heartbeat = database.getSetting("worker.heartbeat");
-    return {
-      status: "ok",
-      worker: heartbeat && Date.now() - new Date(heartbeat).getTime() < 15_000 ? "online" : "offline"
-    };
-  });
-
-  const staticAvailable = fs.existsSync(path.join(config.WEB_DIST, "index.html"));
-  if (staticAvailable) {
-    await app.register(fastifyStatic, {
-      root: config.WEB_DIST,
-      prefix: "/",
-      maxAge: "365d",
-      immutable: true,
-      setHeaders(reply, filePath) {
-        const relativePath = path.relative(config.WEB_DIST, filePath);
-        const isHashedAsset = relativePath.startsWith(`assets${path.sep}`)
-          && /-[A-Za-z0-9_-]{8,}\.[^.]+(?:\.map)?$/.test(path.basename(relativePath));
-        if (relativePath === "index.html") reply.header("cache-control", "no-store");
-        else if (!isHashedAsset) reply.header("cache-control", "no-cache");
-      }
-    });
-    app.setNotFoundHandler(async (request, reply) => {
-      reply.header("cache-control", "no-store");
-      if (request.url.startsWith("/api/")) {
-        return reply.code(404).send({ error: "API-Endpunkt nicht gefunden", code: "NOT_FOUND" });
-      }
-      if (request.method === "GET" && request.headers.accept?.includes("text/html")) {
-        reply.header("cache-control", "no-store");
-        return reply.sendFile("index.html");
-      }
-      return reply.code(404).send({ error: "Nicht gefunden", code: "NOT_FOUND" });
-    });
-  }
 
   app.setErrorHandler(async (error, request, reply) => {
     if (reply.sent) return;
@@ -154,6 +99,70 @@ export async function createApp(config: AppConfig, database = new Database(confi
       code: statusCode >= 500 ? "INTERNAL" : "REQUEST_FAILED"
     });
   });
+
+  installAuthHook(app, database);
+  const uploads = new UploadService(config, database);
+  const cloudflare = new CloudflareService(config, database);
+  const github = new GitHubService(config, database);
+  const previewDns = new PreviewDnsReconciler(database, cloudflare);
+  registerBrandingRoutes(app, database, config.WEB_DIST);
+  registerAuthRoutes(app, config, database);
+  registerSiteAccessRoutes(app, config, database);
+  registerOpenApiRoutes(app, database);
+  registerApiTokenRoutes(app, database);
+  registerUploadRoutes(app, uploads);
+  registerProjectRoutes(app, config, database, uploads, cloudflare, github);
+  registerPullRequestPreviewRoutes(app, config, database, cloudflare, github);
+  registerProjectObservabilityRoutes(app, config, database);
+  registerDeploymentRoutes(app, database);
+  registerSettingsRoutes(app, cloudflare);
+  registerGithubRoutes(app, github);
+  registerServerMetricsRoutes(app, config, database);
+  previewDns.start();
+  app.addHook("onClose", async () => previewDns.stop());
+
+  app.get("/api/healthz", async () => {
+    const heartbeat = database.getSetting("worker.heartbeat");
+    return {
+      status: "ok",
+      worker: heartbeat && Date.now() - new Date(heartbeat).getTime() < 15_000 ? "online" : "offline"
+    };
+  });
+
+  const staticAvailable = fs.existsSync(path.join(config.WEB_DIST, "index.html"));
+  if (staticAvailable) {
+    const entryHtml = fs.readFileSync(path.join(config.WEB_DIST, "index.html"), "utf8");
+    const entry = async (_request: unknown, reply: import("fastify").FastifyReply) =>
+      reply.header("cache-control", "no-store").type("text/html").send(brandHtml(entryHtml, database));
+    app.get("/", entry);
+    app.get("/index.html", entry);
+    await app.register(fastifyStatic, {
+      root: config.WEB_DIST,
+      prefix: "/",
+      maxAge: "365d",
+      immutable: true,
+      setHeaders(reply, filePath) {
+        const relativePath = path.relative(config.WEB_DIST, filePath);
+        const isHashedAsset = relativePath.startsWith(`assets${path.sep}`)
+          && /-[A-Za-z0-9_-]{8,}\.[^.]+(?:\.map)?$/.test(path.basename(relativePath));
+        if (relativePath === "index.html") reply.header("cache-control", "no-store");
+        else if (!isHashedAsset) reply.header("cache-control", "no-cache");
+      }
+    });
+    app.setNotFoundHandler(async (request, reply) => {
+      reply.header("cache-control", "no-store");
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "API-Endpunkt nicht gefunden", code: "NOT_FOUND" });
+      }
+      if (request.method === "GET" && request.headers.accept?.includes("text/html")) {
+        reply.header("cache-control", "no-store");
+        return reply.type("text/html").send(brandHtml(entryHtml, database));
+      }
+      return reply.code(404).send({ error: "Nicht gefunden", code: "NOT_FOUND" });
+    });
+  }
+
+
 
   reconcileRouting(config, database);
   app.addHook("onClose", async () => {

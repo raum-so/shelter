@@ -85,6 +85,20 @@ jobs:
           npm ci
           npm run check
 
+      - name: Verify tested npm CLI artifact
+        run: |
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; import { verifyCliArchive } from "./ops/lib/cli-package.mjs"; const metadata = JSON.parse(await readFile("dist/cli/metadata.json", "utf8")); const source = JSON.parse(await readFile("apps/cli/package.json", "utf8")); await verifyCliArchive("dist/cli/shelter-cli.tgz", metadata, source.name, process.env.TAG_NAME.slice(1));'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+
+      - name: Preserve npm CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shelter-npm-cli-${{ github.run_id }}
+          path: dist/cli/
+          if-no-files-found: error
+          retention-days: 14
+
   prepare:
     name: Prepare verified release
     needs: verify
@@ -1693,3 +1707,80 @@ jobs:
             printf -- '%s\n' "- Image: \`$IMAGE_REFERENCE\`"
             printf -- '- Release: %s\n' "$RELEASE_URL"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  npm-cli:
+    name: Publish CLI to npm
+    needs: [verify, publish]
+    if: github.repository == 'raum-so/shelter' && vars.SHELTER_NPM_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js for trusted publishing
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Require an OIDC-capable npm version
+        run: |
+          node --input-type=module -e 'import { execFileSync } from "node:child_process"; const [major, minor, patch] = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim().split(".").map(Number); if (!(major > 11 || major === 11 && (minor > 5 || minor === 5 && patch >= 1))) throw new Error("npm >=11.5.1 is required for trusted publishing");'
+
+      - name: Download verified CLI package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: shelter-npm-cli-${{ github.run_id }}
+          path: dist/cli
+
+      - name: Verify package identity and integrity before publication
+        id: package
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from "node:fs/promises";
+          import { verifyCliArchive } from "./ops/lib/cli-package.mjs";
+          import { readConsistentRepositoryVersion } from "./ops/lib/development-policy.mjs";
+          const version = readConsistentRepositoryVersion(await readFile("package.json", "utf8"), await readFile("package-lock.json", "utf8"), "release");
+          if (process.env.TAG_NAME !== `v${version}`) throw new Error("Release tag mismatch");
+          const source = JSON.parse(await readFile("apps/cli/package.json", "utf8"));
+          const metadata = JSON.parse(await readFile("dist/cli/metadata.json", "utf8"));
+          await verifyCliArchive("dist/cli/shelter-cli.tgz", metadata, source.name, version);
+          await appendFile(process.env.GITHUB_OUTPUT, `tag=${metadata.tag}\n`);
+          NODE
+
+      - name: Publish exact CLI archive using npm trusted publishing
+        env:
+          NPM_DIST_TAG: ${{ steps.package.outputs.tag }}
+        run: npm publish ./dist/cli/shelter-cli.tgz --access public --provenance --ignore-scripts --registry https://registry.npmjs.org/ --tag "$NPM_DIST_TAG"
+
+      - name: Verify published registry integrity
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFile } from "node:fs/promises";
+          import { setTimeout } from "node:timers/promises";
+          const metadata = JSON.parse(await readFile("dist/cli/metadata.json", "utf8"));
+          let verified = false;
+          for (let attempt = 0; attempt < 6; attempt++) {
+            try {
+              const integrity = JSON.parse(execFileSync("npm", ["view", `${metadata.name}@${metadata.version}`, "dist.integrity", "--json", "--registry", "https://registry.npmjs.org/"], { encoding: "utf8" }));
+              if (integrity !== metadata.integrity) throw new Error("Published CLI integrity mismatch");
+              verified = true;
+              break;
+            } catch (error) {
+              if (attempt === 5) throw error;
+              await setTimeout(5000);
+            }
+          }
+          if (!verified) throw new Error("Could not verify the published CLI");
+          console.log(`Verified ${metadata.name}@${metadata.version}`);
+          NODE

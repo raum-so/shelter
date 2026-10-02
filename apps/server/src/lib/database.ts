@@ -915,11 +915,17 @@ export class Database {
   updateUserPasswordAndInvalidateOtherSessions(
     userId: string,
     passwordHash: string,
-    currentSessionTokenHash: string
-  ): { invalidatedSessions: number; invalidatedApiTokens: number } {
+    currentSessionTokenHash: string,
+    expectedPasswordHash: string
+  ): { invalidatedSessions: number; invalidatedApiTokens: number } | undefined {
     return this.sqlite.transaction(() => {
-      const updated = this.sqlite.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
-      if (updated.changes !== 1) throw new Error("User not found while updating password");
+      const updated = this.sqlite.prepare(`
+        UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?
+          AND EXISTS (
+            SELECT 1 FROM sessions WHERE token_hash = ? AND user_id = users.id AND expires_at > ?
+          )
+      `).run(passwordHash, userId, expectedPasswordHash, currentSessionTokenHash, new Date().toISOString());
+      if (updated.changes !== 1) return undefined;
       const invalidated = this.sqlite.prepare(
         "DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?"
       ).run(userId, currentSessionTokenHash);
@@ -940,6 +946,16 @@ export class Database {
       INSERT INTO sessions (token_hash, user_id, csrf_hash, csrf_token, expires_at, created_at)
       VALUES (@token_hash, @user_id, @csrf_hash, @csrf_token, @expires_at, @created_at)
     `).run(session);
+  }
+
+  createSessionIfPasswordCurrent(session: SessionRow, expectedPasswordHash: string): boolean {
+    // Password verification is asynchronous; bind session creation to the verified credential.
+    const result = this.sqlite.prepare(`
+      INSERT INTO sessions (token_hash, user_id, csrf_hash, csrf_token, expires_at, created_at)
+      SELECT @token_hash, @user_id, @csrf_hash, @csrf_token, @expires_at, @created_at
+      WHERE EXISTS (SELECT 1 FROM users WHERE id = @user_id AND password_hash = @expected_password_hash)
+    `).run({ ...session, expected_password_hash: expectedPasswordHash });
+    return result.changes === 1;
   }
 
   getSession(tokenHash: string): SessionRow | undefined {
@@ -2925,7 +2941,10 @@ export class Database {
           access_session_ttl_hours = @access_session_ttl_hours,
           seo_indexing = @seo_indexing,
           access_session_version = access_session_version + @version_increment
-      WHERE id = @id AND project_id = @project_id
+      WHERE id = @id AND project_id = @project_id AND status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM project_deletions WHERE project_deletions.project_id = domains.project_id
+        )
     `).run({
       id,
       project_id: projectId,
@@ -3171,6 +3190,13 @@ export class Database {
       return result.changes === 1 ? this.getDeployment(next.id) : undefined;
     });
     return claim.immediate();
+  }
+
+  hasActiveProductionDeployment(projectId: string): boolean {
+    return Boolean(this.sqlite.prepare(`
+      SELECT 1 FROM deployments WHERE project_id = ? AND deployment_scope = 'production'
+        AND status IN ('queued','preparing','building','checking','switching') LIMIT 1
+    `).get(projectId));
   }
 
   listDeployments(projectId: string, limit = 20): DeploymentRow[] {
@@ -3896,7 +3922,7 @@ export class Database {
 
   replaceEnvironmentForMutableProject(projectId: string, variables: EnvironmentVariableRow[]): boolean {
     const replace = this.sqlite.transaction(() => {
-      if (!this.getMutableProject(projectId)) return false;
+      if (!this.getMutableProject(projectId) || this.hasActiveProductionDeployment(projectId)) return false;
       this.sqlite.prepare("DELETE FROM environment_variables WHERE project_id = ?").run(projectId);
       const insert = this.sqlite.prepare(`
         INSERT INTO environment_variables (id, project_id, key, encrypted_value, created_at, updated_at)

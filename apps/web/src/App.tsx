@@ -21,6 +21,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((module) => 
 const ProjectPage = lazy(() => import('./pages/ProjectPage').then((module) => ({ default: module.ProjectPage })));
 const ServerMetricsPage = lazy(() => import('./pages/ServerMetricsPage').then((module) => ({ default: module.ServerMetricsPage })));
 const ApiSettingsPage = lazy(() => import('./pages/ApiSettingsPage').then((module) => ({ default: module.ApiSettingsPage })));
+const BrandingPage = lazy(() => import('./pages/BrandingPage').then((module) => ({ default: module.BrandingPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
 const UploadProjectSourcePage = lazy(() => import('./pages/UploadProjectSourcePage').then((module) => ({ default: module.UploadProjectSourcePage })));
 
@@ -144,6 +145,7 @@ export function App() {
             />
             <Route path="settings/cloudflare" element={<SettingsPage key="cloudflare" section="cloudflare" />} />
             <Route path="settings/github" element={<SettingsPage key="github" section="github" />} />
+            <Route path="settings/branding" element={<BrandingPage />} />
             <Route path="settings/api" element={<ApiSettingsPage />} />
             <Route path="settings/security" element={<SettingsPage key="security" section="security" />} />
             <Route path="*" element={<NotFoundPage />} />

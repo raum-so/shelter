@@ -101,13 +101,14 @@ Shelter does not protect against:
 ### Authentication and requests
 
 - Passwords are hashed with scrypt and a random salt.
+- Login session creation atomically checks that the verified password is still current. Password changes require the verified password and an unexpired, still-valid initiating session at commit time; a concurrent change is rejected with HTTP 409. Successful changes invalidate other administrator sessions and API tokens.
 - Session and CSRF tokens are random. Only a SHA-256 hash of each session token is stored. The session record also holds the CSRF token alongside its verification hash so multiple tabs can share it; the token is not sufficient without the HttpOnly session cookie.
 - Session cookies are `HttpOnly` and `SameSite=Strict`, and also `Secure` behind HTTPS.
 - Mutations require a CSRF header and, when present, compare the Origin with the forwarded host.
-- Failed logins are limited to five attempts per minute.
+- Failed logins are limited to five attempts per minute. Login credentials are type-checked before password verification; malformed fields return HTTP 400.
 - The API sends CSP, frame, MIME, referrer, and permissions headers.
 
-Project-domain password protection is separate from administrator authentication. Site passwords are stored with the same salted scrypt password hashing primitive and are never returned by the API. Traefik calls an internal forward-auth endpoint before proxying a protected hostname. Successful visitors receive a signed, `HttpOnly`, `Secure`, `SameSite=Lax`, host-only cookie that is bound to the domain, expiration, and a revocable session generation. The password form is rate-limited, validates the request host and Origin when present, and never accepts an external return URL. Password-protected responses receive `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`.
+Project-domain password protection is separate from administrator authentication. Access-setting writes require an active domain and a project outside deletion quarantine at commit time; concurrent deletion returns HTTP 409. Site passwords are stored with the same salted scrypt password hashing primitive and are never returned by the API. Traefik calls an internal forward-auth endpoint before proxying a protected hostname. Successful visitors receive a signed, `HttpOnly`, `Secure`, `SameSite=Lax`, host-only cookie that is bound to the domain, expiration, and a revocable session generation. The password form is rate-limited, validates the request host and Origin when present, and never accepts an external return URL. Password-protected responses receive `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`.
 
 This shared-password layer is intended for previews, client review, and low-risk private sharing. Everyone who knows the password has the same access, and recipients can forward it. It is not user identity, authorization inside the application, DRM, or a substitute for application-level access control around sensitive data. A deployed application receives the visitor cookie in the normal HTTP request after authorization and must remain trusted within Shelter's documented deployment threat model.
 
@@ -266,3 +267,16 @@ links contain permission metadata only. The setup guide's Access status remains
 an administrator acknowledgement for the exact hostname, not automatic policy
 verification. Public shared OAuth and automated Access policy creation are not
 part of this self-hosted flow.
+
+
+## Platform branding
+
+Appearance profiles are public data, including logos and support/legal URLs.
+Administration requires an administrator session and CSRF validation. Portable
+exports contain only a strict allowlist of display fields; credentials, project
+variables, and provider configuration are never included. Import is validated
+without publishing, and save/reset uses an atomic revision check. Images are
+bounded PNGs; uploaded SVG, scripts, arbitrary CSS/HTML and remote asset fetching
+are disallowed. Text is escaped in server-rendered HTML and bootstrap JSON.
+Branding does not change cookie names, authentication scopes, routing identifiers,
+Docker resources, or existing GitHub App registrations.

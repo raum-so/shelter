@@ -357,3 +357,38 @@ describe("one-click rollback API", () => {
     await app.close();
   });
 });
+
+
+describe("deployment guards across the complete history", () => {
+  it.each(["deploy", "environment"] as const)("rejects %s with an older running deployment", async (action) => {
+    const { config, database } = context();
+    const row = project("prj_history_guard");
+    database.createProject(row);
+    for (let index = 0; index < 21; index += 1) {
+      database.createDeployment(deployment(`dep_cancelled_${index}`, row.id, "cancelled", { created_at: "2026-01-02T00:00:00.000Z" }));
+    }
+    // A backwards clock adjustment can place new work behind completed history.
+    database.createDeployment(deployment("dep_running", row.id, "building", { created_at: "2026-01-01T00:00:00.000Z" }));
+    const app = await createApp(config, database);
+    const headers = await mutationHeaders(app);
+    try {
+      const response = await app.inject({
+        method: action === "deploy" ? "POST" : "PUT",
+        url: `/api/projects/${row.id}/${action}`, headers,
+        payload: action === "deploy" ? {} : { variables: [{ key: "FEATURE", value: "changed" }] }
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().code).toBe("DEPLOYMENT_ACTIVE");
+      expect(database.listEnvironment(row.id)).toHaveLength(0);
+      expect(database.listDeployments(row.id, 100)).toHaveLength(22);
+      database.updateDeployment("dep_running", { status: "failed" });
+      const retry = await app.inject({
+        method: action === "deploy" ? "POST" : "PUT",
+        url: `/api/projects/${row.id}/${action}`, headers,
+        payload: action === "deploy" ? {} : { variables: [{ key: "FEATURE", value: "changed" }] }
+      });
+      expect(retry.statusCode).toBe(action === "deploy" ? 202 : 200);
+      if (action === "environment") expect(database.listEnvironment(row.id).map((entry) => entry.key)).toEqual(["FEATURE"]);
+    } finally { await app.close(); }
+  });
+});

@@ -1,3 +1,4 @@
+import { BRAND_NAME } from '../lib/brand';
 // Template links contain permissions only, never credentials. Cloudflare still
 // asks the operator to review account/zone resources before creating the token.
 export function cloudflareTokenTemplateUrl(accountId = ''): string {
@@ -16,6 +17,6 @@ export function cloudflareTokenTemplateUrl(accountId = ''): string {
     /^[a-f0-9]{32}$/i.test(accountId) ? accountId : '*',
   );
   url.searchParams.set('zoneId', 'all');
-  url.searchParams.set('name', 'Shelter');
+  url.searchParams.set('name', BRAND_NAME);
   return url.toString();
 }

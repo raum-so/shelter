@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { Braces, Cloud, ShieldCheck } from 'lucide-react';
+import { Braces, Cloud, Palette, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useI18n } from '@/i18n';
 import { Button, PageIntro } from '@/components/ui';
 import { GitHubIcon } from '@/components/GitHubIcon';
 
-export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security';
+export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding';
 
 export function SettingsHeader({
   section,
@@ -16,6 +16,7 @@ export function SettingsHeader({
 }) {
   const { t } = useI18n();
   const copy = {
+    branding: { title: t('Branding', 'Branding'), description: t('Make this platform your own. Preview, save and transfer your brand identity.', 'Gestalte diese Plattform mit deiner Marke. Identität vorschauen, speichern und übertragen.') },
     cloudflare: {
       title: t('Cloudflare & routing', 'Cloudflare & Routing'),
       description: t(
@@ -47,6 +48,7 @@ export function SettingsHeader({
   } satisfies Record<SettingsSection, { title: string; description: string }>;
 
   const items = [
+    { key: 'branding' as const, to: '/settings/branding', label: t('Branding', 'Branding'), icon: Palette },
     { key: 'cloudflare' as const, to: '/settings/cloudflare', label: 'Cloudflare & Routing', icon: Cloud },
     { key: 'github' as const, to: '/settings/github', label: 'GitHub', icon: GitHubIcon },
     { key: 'api' as const, to: '/settings/api', label: 'API & CLI', icon: Braces },

@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../lib/database.js";
-import { badRequest, HttpError } from "../lib/errors.js";
+import { badRequest, conflict, HttpError } from "../lib/errors.js";
 import {
   API_TOKEN_PATTERN,
   hashApiToken,
@@ -193,11 +194,16 @@ export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, data
     };
   });
 
-  app.post<{ Body: { email?: string; username?: string; password?: string } }>("/api/auth/login", {
+  app.post<{ Body: unknown }>("/api/auth/login", {
     config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
   }, async (request, reply) => {
-    const email = (request.body?.email ?? request.body?.username)?.trim().toLowerCase() ?? "";
-    const password = request.body?.password ?? "";
+    const input = z.object({
+      email: z.string().nullish(),
+      username: z.string().nullish(),
+      password: z.string().nullish()
+    }).parse(request.body ?? {});
+    const email = (input.email ?? input.username)?.trim().toLowerCase() ?? "";
+    const password = input.password ?? "";
     const user = database.findUserByEmail(email);
     const valid = user ? await verifyPassword(password, user.password_hash) : false;
     if (!user || !valid) {
@@ -208,14 +214,17 @@ export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, data
     const sessionToken = randomToken();
     const csrfToken = randomToken();
     const now = new Date();
-    database.createSession({
+    const created = database.createSessionIfPasswordCurrent({
       token_hash: hashToken(sessionToken),
       user_id: user.id,
       csrf_hash: hashToken(csrfToken),
       csrf_token: csrfToken,
       expires_at: new Date(now.getTime() + config.SESSION_TTL_HOURS * 60 * 60 * 1000).toISOString(),
       created_at: now.toISOString()
-    });
+    }, user.password_hash);
+    if (!created) {
+      return reply.code(401).send({ error: "E-Mail oder Passwort ist falsch", code: "INVALID_CREDENTIALS" });
+    }
 
     const forwardedProto = request.headers["x-forwarded-proto"];
     const requestHost = request.headers.host?.split(":")[0]?.toLowerCase();
@@ -267,8 +276,12 @@ export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, data
     const invalidated = database.updateUserPasswordAndInvalidateOtherSessions(
       authentication.user.id,
       passwordHash,
-      authentication.sessionTokenHash
+      authentication.sessionTokenHash,
+      authentication.user.password_hash
     );
+    if (!invalidated) {
+      throw conflict("Passwort oder Sitzung hat sich während der Änderung geändert", "AUTH_STATE_CHANGED");
+    }
     return { ok: true, ...invalidated };
   });
 }

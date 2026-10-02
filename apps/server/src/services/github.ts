@@ -1,3 +1,4 @@
+import { getBranding } from "./branding.js";
 import {
   createHash,
   createHmac,
@@ -469,7 +470,7 @@ export class GitHubService {
       origin,
       callbackUrl,
       setupState,
-      `Shelter ${panelName}`.slice(0, 34)
+      `${getBranding(this.database).name} ${panelName}`.slice(0, 34)
     );
     return {
       registrationUrl: `${GITHUB_REGISTRATION_URL}?state=${encodeURIComponent(state)}`,
@@ -515,7 +516,7 @@ export class GitHubService {
     const now = new Date();
     const suffix = ` upgrade-${createHash("sha256").update(randomToken()).digest("hex").slice(0, 6)}`;
     const panelName = new URL(origin).hostname.replaceAll(".", "-");
-    const baseName = `Shelter ${panelName}`.slice(0, Math.max(1, 34 - suffix.length));
+    const baseName = `${getBranding(this.database).name} ${panelName}`.slice(0, Math.max(1, 34 - suffix.length));
     const manifest = this.manifest(origin, callbackUrl, setupState, `${baseName}${suffix}`);
 
     this.database.createGithubAppUpgradeFlow({

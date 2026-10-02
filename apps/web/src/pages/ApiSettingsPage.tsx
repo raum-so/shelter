@@ -363,7 +363,7 @@ export function ApiSettingsPage() {
                   <TerminalSquare className="size-4" aria-hidden="true" />
                 </span>
                 <div>
-                  <CardTitle>Shelter CLI</CardTitle>
+                  <CardTitle>{t('Shelter CLI', 'Shelter CLI')}</CardTitle>
                   <CardDescription>{t('Connect this installation', 'Diese Installation verbinden')}</CardDescription>
                 </div>
               </div>

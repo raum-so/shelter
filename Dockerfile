@@ -6,10 +6,12 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/cli/package.json apps/cli/package.json
 RUN npm ci
 
 COPY apps/server apps/server
 COPY apps/web apps/web
+COPY apps/cli apps/cli
 RUN npm run build
 RUN npm prune --omit=dev --ignore-scripts
 

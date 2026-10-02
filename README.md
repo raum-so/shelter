@@ -125,19 +125,26 @@ See the [release guide](docs/RELEASES.md) for production updates and verificatio
 
 ## API and CLI
 
-Create a scoped token under **Settings → API & CLI**, then install the standalone [Shelter CLI](https://github.com/asteinberger/shelter-cli) without placing the secret in shell history:
+Once the first CLI npm release is published, install with
+`npm install --global @shelter/cli`, or run `npx --yes @shelter/cli --help`.
+The package requires Node.js 24+. Stable npm versions track Shelter releases;
+see [npm release setup](docs/RELEASES.md#cli-distribution-on-npm).
+
+Create a scoped token under **Settings → API & CLI**, then build the monorepo [Shelter CLI](apps/cli/README.md) without placing the secret in shell history:
 
 ```sh
-git clone https://github.com/asteinberger/shelter-cli.git
-cd shelter-cli
+git clone https://github.com/raum-so/shelter.git
+cd shelter
 npm ci
-npm run build
-npm install --global .
+npm run build -w @shelter/cli
+npm install --global ./apps/cli
 shelter login --server https://panel.example.com
 shelter projects
 ```
 
-Each installation publishes its OpenAPI document at `/api/openapi.json`. See the [API guide](docs/API.md) and [CLI repository](https://github.com/asteinberger/shelter-cli) for authentication, scopes, commands, uploads, JSON output, and CI usage.
+Each installation publishes its OpenAPI document at `/api/openapi.json`. See the [API guide](docs/API.md) and [CLI guide](apps/cli/README.md) for authentication, scopes, commands, uploads, JSON output, and CI usage.
+
+For agents, `shelter commands --json` discovers commands and required scopes; `shelter schema` reads the installed API contract. Use `--json` for structured results and errors, and `--input -` to pass sensitive JSON over stdin. See the [agent workflow](apps/cli/README.md#agent-workflow).
 
 ## Architecture
 
@@ -452,6 +459,8 @@ The project root, build type, Dockerfile path, application port, and health-chec
 
 ### Environment variables
 
+Production environment changes are rejected while any production deployment is queued or running, regardless of its position in the deployment history. Retry after that deployment finishes or is cancelled.
+
 Variables are encrypted under `APP_SECRET` at rest. Saved values are not returned to the browser. The worker supplies them to automatic builds using a BuildKit secret and to running containers as environment variables.
 
 During GitHub, ZIP, and folder setup, Shelter detects bounded static references such as `process.env.KEY`, `import.meta.env.KEY`, Deno/Bun environment access, explicit example files, and common Zod/`createEnv` declarations. The setup separates required values from suggestions, server-only secrets from public client variables, and build-time from runtime use. High-confidence required values are requested before the first deployment, every finding links back to its source path and line, and a suspected false positive can be explicitly skipped. Dynamic lookups remain advisory and may need to be added manually.
@@ -495,6 +504,35 @@ The **Access & visibility** section configures each hostname independently:
 - **Delete project:** remove routes, project containers and images, stored source, previews, deployments, and owned DNS associations after confirmation.
 
 Each deployment runs in a version-bound container on its project's own bridge network. The current runtime stays online while its candidate is built and probed by a disposable bounded helper on that same project network; the worker itself never joins the network. Shelter then changes the persisted active deployment and Traefik routing atomically, and removes the previous runtime only after the switch commits. Screenshot capture uses a separate bounded helper with the same isolation. A failed candidate or routing update keeps or restores the previous deployment. Deployment logs are streamed in the panel.
+
+## Platform branding
+
+Open **Settings → Branding** to configure one identity for the whole installation:
+
+- platform name, tagline, browser/search description, sign-in message, and footer;
+- separate light/dark logos, symbol or wordmark layout, and an app icon/favicon;
+- light/dark accent, background, text, and card colors with minimum text contrast;
+- optional HTTPS support, documentation, privacy, and legal links.
+
+The profile applies to the panel, login, browser metadata, web app manifest, public
+site-password pages, and newly generated GitHub App names. Existing GitHub App
+registrations are not renamed. Without a custom image, a custom platform name
+uses an initial instead of the default mascot. A newly installed browser app uses
+the current identity; already installed apps may retain cached icons or names.
+
+Preview changes before saving. **Export saved profile** downloads a portable,
+versioned JSON file with embedded images and no credentials or project settings.
+**Import** validates that file and loads a draft; saving is a separate action.
+Images are normalized locally from PNG/JPEG/WebP to PNG (up to 1024 px and 512 KiB
+per image). The server accepts only bounded PNG assets and HTTPS links without
+credentials. Custom HTML, CSS, scripts, remote fonts, and remote image loading are
+not supported. Imports cannot alter authentication, routing, or provider settings.
+
+Concurrent edits fail with a conflict instead of overwriting another saved
+profile. **Restore defaults** restores the original identity after confirmation.
+Branding lives in the existing SQLite data volume and is included in normal
+backups. Technical identifiers, API paths, CLI/package names, Docker resources,
+source licensing, and deployed application content remain unchanged.
 
 ## Configuration
 
