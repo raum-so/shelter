@@ -45,6 +45,7 @@ export function setBranding(next: BrandingState): void {
   BRAND_CLAIM = next.profile.claim;
   if (typeof document !== 'undefined') {
     const profile = next.profile;
+    const revision = encodeURIComponent(next.revision);
     document.title = `${profile.name}${profile.claim ? ` — ${profile.claim}` : ''}`;
     const values: Record<string, string> = {
       'application-name': profile.name, 'apple-mobile-web-app-title': profile.name,
@@ -56,14 +57,14 @@ export function setBranding(next: BrandingState): void {
       document.querySelector(`meta[name="${key}"],meta[property="${key}"]`)?.setAttribute('content', value);
     }
     for (const element of document.querySelectorAll<HTMLLinkElement>('link[rel="icon"],link[rel="apple-touch-icon"]')) {
-      element.href = `/api/branding/assets/icon?v=${next.revision}`;
+      element.href = `/api/branding/assets/icon?v=${revision}`;
     }
     let theme = document.querySelector<HTMLLinkElement>('#branding-theme');
     if (!theme) {
       theme = document.createElement('link'); theme.id = 'branding-theme'; theme.rel = 'stylesheet';
       document.head.append(theme);
     }
-    theme.href = `/api/branding/theme.css?v=${next.revision}`;
+    theme.href = `/api/branding/theme.css?v=${revision}`;
   }
   listeners.forEach((listener) => listener());
 }
