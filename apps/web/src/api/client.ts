@@ -1,3 +1,4 @@
+import { brandCopy, type Branding, type BrandingState } from '../lib/brand';
 import type {
   ApiTokenSummary,
   CloudflareInput,
@@ -62,8 +63,8 @@ export function setCsrfToken(token?: string | null) {
 function extractMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
-    if (typeof record.message === 'string') return record.message;
-    if (typeof record.error === 'string') return record.error;
+    if (typeof record.message === 'string') return brandCopy(record.message);
+    if (typeof record.error === 'string') return brandCopy(record.error);
   }
   return fallback;
 }
@@ -228,6 +229,12 @@ async function uploadArchive(file: File, onProgress?: (progress: UploadProgress)
 }
 
 export const api = {
+  branding: () => request<BrandingState>('/api/branding'),
+  saveBranding: (profile: Branding, revision: string) => request<BrandingState>('/api/settings/branding', { method: 'PUT', body: JSON.stringify({ profile, revision }) }),
+  validateBranding: (profile: unknown) => request<{ profile: Branding }>('/api/settings/branding/validate', { method: 'POST', body: JSON.stringify({ profile }) }),
+  resetBranding: (revision: string) => request<BrandingState>('/api/settings/branding/reset', { method: 'POST', body: JSON.stringify({ revision }) }),
+  exportBranding: () => request<Branding>('/api/settings/branding/export'),
+
   async session() {
     const session = unwrap(await request<Session | { data: Session }>('/api/auth/session'));
     setCsrfToken(session.csrfToken);

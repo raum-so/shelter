@@ -1,3 +1,4 @@
+import { useBranding } from '@/lib/brand';
 import type { ImgHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -6,9 +7,10 @@ type ShelterFrogProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'alt' | 'heigh
 };
 
 export function ShelterFrog({ className, title, ...props }: ShelterFrogProps) {
+  const { profile, revision } = useBranding();
   return (
     <img
-      src="/brand/shelter-icon-64.png"
+      src={profile.icon ?? profile.logoLight ?? profile.logoDark ?? (profile.name === "Shelter" ? "/brand/shelter-icon-64.png" : `/api/branding/assets/icon?v=${revision}`)}
       width="64"
       height="64"
       alt={title ?? ''}

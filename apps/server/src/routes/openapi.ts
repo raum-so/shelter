@@ -1,3 +1,5 @@
+import type { Database } from "../lib/database.js";
+import { getBranding } from "../services/branding.js";
 import type { FastifyInstance } from "fastify";
 
 const bearerSecurity = [{ bearerAuth: [] }];
@@ -11,11 +13,12 @@ const errorResponse = {
   }
 };
 
-export function registerOpenApiRoutes(app: FastifyInstance): void {
+export function registerOpenApiRoutes(app: FastifyInstance, database: Database): void {
   app.get("/api", async (_request, reply) => {
-    reply.header("cache-control", "public, max-age=300");
+    reply.header("cache-control", "no-store");
+    const name = getBranding(database).name;
     return {
-      name: "Shelter API",
+      name: `${name} API`,
       version: "1.0.0",
       documentation: "/api/openapi.json",
       authentication: "Bearer shelter_pat_v1_…"
@@ -23,15 +26,16 @@ export function registerOpenApiRoutes(app: FastifyInstance): void {
   });
 
   app.get("/api/openapi.json", async (_request, reply) => {
-    reply.header("cache-control", "public, max-age=300");
+    reply.header("cache-control", "no-store");
+    const name = getBranding(database).name;
     return {
       openapi: "3.1.0",
       info: {
-        title: "Shelter API",
+        title: `${name} API`,
         version: "1.0.0",
-        description: "Automate projects, deployments, uploads, logs, and domains on a Shelter installation."
+        description: `Automate projects, deployments, uploads, logs, and domains on a ${name} installation.`
       },
-      servers: [{ url: "/", description: "This Shelter installation" }],
+      servers: [{ url: "/", description: `This ${name} installation` }],
       tags: [
         { name: "System" },
         { name: "Projects" },
@@ -43,7 +47,7 @@ export function registerOpenApiRoutes(app: FastifyInstance): void {
       ],
       paths: {
         "/api/healthz": {
-          get: { tags: ["System"], summary: "Check Shelter and worker health", responses: { "200": { description: "Health state" } } }
+          get: { tags: ["System"], summary: `Check ${name} and worker health`, responses: { "200": { description: "Health state" } } }
         },
         "/api/server/metrics": {
           get: {
@@ -105,7 +109,7 @@ export function registerOpenApiRoutes(app: FastifyInstance): void {
           get: {
             tags: ["Observability"],
             summary: "Read bounded application output from the active deployment",
-            description: "Administrator session only. Runtime output is separate from deployment logs. Shelter stores at most 5,000 lines per project for the configured metrics retention window and returns at most 500 lines. Exact configured environment values are redacted, but applications can still emit other sensitive data.",
+            description: `Administrator session only. Runtime output is separate from deployment logs. ${name} stores at most 5,000 lines per project for the configured metrics retention window and returns at most 500 lines. Exact configured environment values are redacted, but applications can still emit other sensitive data.`,
             security: sessionSecurity,
             responses: { "200": { description: "Active deployment runtime-log records" }, "401": errorResponse, "403": errorResponse, "404": errorResponse }
           }

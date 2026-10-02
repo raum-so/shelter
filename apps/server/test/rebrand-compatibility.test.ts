@@ -158,7 +158,7 @@ describe("Shelter rebrand compatibility", () => {
     });
     const session = login.cookies.find((cookie) => cookie.name === "shelter_session")?.value;
     expect(session).toBeTruthy();
-    expect(login.headers.server).toBe("Shelter");
+    expect(login.headers.server).toBe("web");
 
     const legacyRequest = await app.inject({
       method: "GET",

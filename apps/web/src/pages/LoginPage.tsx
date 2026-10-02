@@ -1,3 +1,4 @@
+import { BrandFooter } from '@/components/BrandFooter';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, CircleAlert, ShieldCheck } from 'lucide-react';
@@ -11,10 +12,11 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { useI18n } from '@/i18n';
 import type { Session } from '../types';
-import { BRAND_NAME } from '../lib/brand';
+import { BRAND_NAME, useBranding } from '../lib/brand';
 
 export function LoginPage() {
   const { t } = useI18n();
+  const { profile } = useBranding();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -62,7 +64,7 @@ export function LoginPage() {
               <h1 id="login-title">{t('Sign in', 'Anmelden')}</h1>
             </CardTitle>
             <CardDescription>
-              {t('Sign in with your Shelter administrator account.', 'Melde dich mit deinem Shelter-Admin-Konto an.')}
+              {profile.loginMessage || t('Sign in with your Shelter administrator account.', 'Melde dich mit deinem Shelter-Admin-Konto an.')}
             </CardDescription>
           </CardHeader>
 
@@ -133,6 +135,7 @@ export function LoginPage() {
         </Card>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">{t('Self-hosted deployment management', 'Self-hosted Deployment-Verwaltung')}</p>
+        <BrandFooter />
       </div>
     </main>
   );

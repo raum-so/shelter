@@ -1,13 +1,9 @@
+import { getBranding } from './brand';
 export type Theme = 'light' | 'dark' | 'system';
 
 export type ResolvedTheme = Exclude<Theme, 'system'>;
 
 export const THEME_STORAGE_KEY = 'shelter-theme';
-
-const THEME_COLORS: Record<ResolvedTheme, string> = {
-  light: '#f5f7fc',
-  dark: '#061321',
-};
 
 type ThemeStorageReader = Pick<Storage, 'getItem'>;
 type ThemeStorageWriter = Pick<Storage, 'setItem'>;
@@ -69,7 +65,7 @@ export function applyResolvedTheme(
 
   targetDocument
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute('content', THEME_COLORS[resolved]);
+    ?.setAttribute('content', getBranding().profile[resolved].background);
 
   return resolved;
 }

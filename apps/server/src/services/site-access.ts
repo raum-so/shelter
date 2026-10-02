@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../lib/database.js";
+import { getBranding, contrastText, type Branding } from "./branding.js";
 import { verifyPassword } from "../lib/security.js";
 import type { DomainRow } from "../types/models.js";
 
@@ -112,7 +113,8 @@ function renderAccessPage(
   domain: DomainRow,
   projectName: string,
   returnPath: string,
-  invalidPassword = false
+  invalidPassword = false,
+  branding: Branding
 ): string {
   const de = prefersGerman(request);
   const title = de ? "Diese Seite ist geschützt" : "This site is protected";
@@ -127,13 +129,18 @@ function renderAccessPage(
     ? "Der Zugriff gilt nur für diese Domain und läuft automatisch ab."
     : "Access applies only to this domain and expires automatically.";
 
+  const links = [[branding.supportUrl, de ? "Hilfe" : "Support"], [branding.documentationUrl, de ? "Dokumentation" : "Documentation"], [branding.privacyUrl, de ? "Datenschutz" : "Privacy"], [branding.legalUrl, de ? "Impressum" : "Legal"]]
+    .filter(([url]) => url).map(([url, label]) => `<a href="${html(url!)}" rel="noreferrer">${html(label!)}</a>`).join(" · ");
+  const logoLight = branding.logoLight ?? branding.icon ?? branding.logoDark;
+  const logoDark = branding.logoDark ?? logoLight;
+  const light = branding.light, dark = branding.dark;
   return `<!doctype html>
 <html lang="${de ? "de" : "en"}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
-  <title>${html(projectName)} · Shelter</title>
+  <title>${html(projectName)} · ${html(branding.name)}</title>
   <style>
     :root{color-scheme:light dark;--bg:#f5f6f3;--card:rgba(255,255,255,.88);--ink:#172018;--muted:#687069;--line:rgba(23,32,24,.12);--accent:#78d65b;--accent-ink:#10220d;--danger:#c23939;--shadow:0 24px 80px rgba(21,31,20,.14)}
     @media(prefers-color-scheme:dark){:root{--bg:#0b0d0b;--card:rgba(21,24,21,.9);--ink:#f2f5f1;--muted:#9da69e;--line:rgba(255,255,255,.11);--accent:#80dd60;--accent-ink:#10220d;--danger:#ff8b85;--shadow:0 28px 90px rgba(0,0,0,.46)}}
@@ -147,12 +154,15 @@ function renderAccessPage(
     .error{margin:8px 0 0;color:var(--danger);font-size:13px}button{width:100%;height:48px;margin-top:14px;border:0;border-radius:13px;background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:720;cursor:pointer;transition:transform .16s,filter .16s}button:hover{filter:brightness(1.04);transform:translateY(-1px)}button:active{transform:translateY(0)}
     .privacy{display:flex;gap:8px;margin-top:18px;padding-top:18px;border-top:1px solid var(--line);font-size:12px}.lock{flex:0 0 auto}
     footer{text-align:center;margin-top:18px;color:var(--muted);font-size:12px}footer strong{color:var(--ink)}
+    :root{--bg:${light.background};--card:${light.surface};--ink:${light.foreground};--accent:${light.primary};--accent-ink:${contrastText(light.primary)};--muted:${light.foreground};--line:color-mix(in srgb,${light.foreground} 20%,transparent)}
+    @media(prefers-color-scheme:dark){:root{--bg:${dark.background};--card:${dark.surface};--ink:${dark.foreground};--accent:${dark.primary};--accent-ink:${contrastText(dark.primary)};--muted:${dark.foreground};--line:color-mix(in srgb,${dark.foreground} 20%,transparent)}}
+    footer a{color:inherit} .brand img{object-fit:contain;${branding.logoLayout === "wordmark" && logoLight ? "width:140px;height:40px" : ""}}
   </style>
 </head>
 <body>
   <main>
     <div class="shell">
-      <div class="brand"><img src="${SITE_ACCESS_PATH}/brand.png" width="64" height="64" alt=""><span>Shelter</span></div>
+      <div class="brand"><picture>${logoDark ? `<source media="(prefers-color-scheme:dark)" srcset="${html(logoDark)}">` : ""}${!logoLight && branding.name !== "Shelter" ? `<span aria-hidden="true" style="display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:24px">${html(Array.from(branding.name)[0] ?? "")}</span>` : `<img src="${logoLight ? html(logoLight) : `${SITE_ACCESS_PATH}/brand.png`}" width="64" height="64" alt="">`}</picture>${branding.logoLayout === "wordmark" && logoLight ? "" : `<span>${html(branding.name)}</span>`}</div>
       <section class="card">
         <p class="eyebrow"><span class="dot"></span><span class="host">${html(domain.hostname)}</span></p>
         <h1>${title}</h1>
@@ -166,7 +176,7 @@ function renderAccessPage(
         </form>
         <p class="privacy"><span class="lock" aria-hidden="true">◈</span><span>${privacy}</span></p>
       </section>
-      <footer><strong>${html(projectName)}</strong> · give your code a home</footer>
+      <footer><strong>${html(projectName)}</strong>${branding.claim ? ` · ${html(branding.claim)}` : ""}${branding.footer ? `<p>${html(branding.footer)}</p>` : ""}${links ? `<p>${links}</p>` : ""}</footer>
     </div>
   </main>
 </body>
@@ -241,7 +251,7 @@ export function registerSiteAccessRoutes(
       }
       const project = database.getProject(domain.project_id);
       return reply.type("text/html; charset=utf-8").send(
-        renderAccessPage(request, domain, project?.name ?? domain.hostname, returnPath)
+        renderAccessPage(request, domain, project?.name ?? domain.hostname, returnPath, false, getBranding(database))
       );
     }
   );
@@ -275,7 +285,7 @@ export function registerSiteAccessRoutes(
       const project = database.getProject(domain.project_id);
       if (!input.success || !await verifyPassword(input.data.password, domain.password_hash)) {
         return reply.code(401).type("text/html; charset=utf-8").send(
-          renderAccessPage(request, domain, project?.name ?? domain.hostname, returnPath, true)
+          renderAccessPage(request, domain, project?.name ?? domain.hostname, returnPath, true, getBranding(database))
         );
       }
       const maxAge = (domain.access_session_ttl_hours ?? 168) * 60 * 60;

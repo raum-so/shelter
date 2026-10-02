@@ -1,3 +1,4 @@
+import { brandCopy, useBranding } from '../lib/brand';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 export const LOCALE_STORAGE_KEY = 'shelter.locale';
@@ -44,7 +45,7 @@ export function localize(
   values?: TranslationValues,
   locale: Locale = currentLocale(),
 ) {
-  return interpolate(locale === 'de' ? german : english, values);
+  return interpolate(brandCopy(locale === 'de' ? german : english), values);
 }
 
 function initialLocale(): Locale {
@@ -61,6 +62,7 @@ function initialLocale(): Locale {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
+  const branding = useBranding();
   const [locale, updateLocale] = useState<Locale>(initialLocale);
 
   const setLocale = useCallback((nextLocale: Locale) => {
@@ -88,7 +90,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback<Translate>((english, german, values) => (
     localize(english, german, values, locale)
-  ), [locale]);
+  ), [locale, branding]);
 
   const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
 

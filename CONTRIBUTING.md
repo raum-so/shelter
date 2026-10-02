@@ -37,7 +37,7 @@ npm run check
 | --- | --- |
 | `npm run dev` | Start the API and web panel in development mode |
 | `npm run typecheck` | Run strict TypeScript checks in every workspace |
-| `npm run test` | Run server and web tests |
+| `npm run test` | Run server, web, and CLI tests |
 | `npm run build` | Create production builds |
 | `npm run check` | Run typecheck, tests, and build |
 

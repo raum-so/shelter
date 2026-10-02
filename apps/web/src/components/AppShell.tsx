@@ -1,3 +1,4 @@
+import { BrandFooter } from './BrandFooter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check as CheckIcon,
@@ -43,7 +44,7 @@ import {
   SheetTrigger,
 } from './ui/sheet';
 import { cn } from '@/lib/utils';
-import { BRAND_NAME } from '@/lib/brand';
+import { BRAND_NAME, BRAND_CLAIM } from '@/lib/brand';
 import { useI18n } from '@/i18n';
 
 function RouteFallback() {
@@ -109,6 +110,7 @@ export function AppShell({ session }: { session: Session }) {
     if (location.pathname === '/settings/cloudflare') return t('Cloudflare & routing', 'Cloudflare & Routing');
     if (location.pathname === '/settings/github') return 'GitHub';
     if (location.pathname === '/settings/api') return 'API & CLI';
+    if (location.pathname === '/settings/branding') return t('Branding', 'Branding');
     if (location.pathname === '/settings/security') return t('Security', 'Sicherheit');
     if (location.pathname.startsWith('/settings')) return t('Settings', 'Einstellungen');
     return t('Page not found', 'Seite nicht gefunden');
@@ -187,7 +189,7 @@ export function AppShell({ session }: { session: Session }) {
       <div className="mt-auto shrink-0 px-4 pb-4">
         <div className="workspace-node mb-5 flex flex-col gap-3 p-4">
           <FolderKanban className="size-5 text-sidebar-accent-foreground" aria-hidden="true" />
-          <p className="text-sm font-medium">{t('Give your code a home.', 'Ein Zuhause für deinen Code.')}</p>
+          <p className="text-sm font-medium">{BRAND_CLAIM}</p>
           <p className="text-xs leading-relaxed text-muted-foreground">{t('From Git or a folder to your own server.', 'Von Git oder einem Ordner auf deinen eigenen Server.')}</p>
           <Button asChild className="w-full" size="lg">
             <NavLink to="/projects/new" onClick={() => mobile && setMenuOpen(false)}>
@@ -316,6 +318,7 @@ export function AppShell({ session }: { session: Session }) {
           <Suspense fallback={<RouteFallback />}>
             <Outlet />
           </Suspense>
+          <BrandFooter />
         </div>
       </main>
     </div>

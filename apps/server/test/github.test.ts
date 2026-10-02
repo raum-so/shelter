@@ -870,7 +870,8 @@ describe("GitHub App manifest and API authentication", () => {
         database.updateUserPasswordAndInvalidateOtherSessions(
           "usr_admin",
           "changed-test-only",
-          hashToken("current-session")
+          hashToken("current-session"),
+          database.findUserById("usr_admin")!.password_hash
         );
       } else {
         database.sqlite.prepare(`

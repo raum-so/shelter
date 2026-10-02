@@ -223,16 +223,43 @@ Clients should use the machine-readable `code`, apply bounded retries only to tr
 
 ## Shelter CLI
 
-The standalone [Shelter CLI](https://github.com/asteinberger/shelter-cli) wraps these API workflows:
+The [Shelter CLI](../apps/cli/README.md) lives in this monorepo as `@shelter/cli`.
+Once its first npm release is published, install with `npm install --global
+@shelter/cli` or use `npx --yes @shelter/cli --help`. Until then, build it locally:
 
 ```sh
-git clone https://github.com/asteinberger/shelter-cli.git
-cd shelter-cli
 npm ci
-npm run build
-npm install --global .
+npm run build -w @shelter/cli
+npm install --global ./apps/cli
 shelter login --server https://panel.example.com
-shelter projects
+shelter projects --json
+shelter commands --json
 ```
 
-See the [CLI repository](https://github.com/asteinberger/shelter-cli) for all commands, JSON output, CI environment variables, and credential-storage details.
+The CLI supports projects, configuration, production and preview environments,
+upload creation/replacement, deployments, cancellation, rollback, build logs,
+domains and domain access, previews, and API discovery. `shelter api METHOD
+/api/path --input file.json` covers additional JSON workflows without waiting
+for a dedicated command. Use `--input -` for sensitive JSON over stdin.
+
+All requests retain the API's token scopes and session-only restrictions.
+Provider setup, API-token management, passwords, server metrics, and runtime
+observability still require the administrator panel. See the
+[CLI guide](../apps/cli/README.md) for commands, exit behavior and agent examples.
+
+
+## Platform branding
+
+`GET /api/branding` publicly returns `{ profile, revision }` because the appearance
+is also used before sign-in. It contains only versioned display fields, embedded
+PNG images, colors and public links. Treat all branding fields as public.
+
+Branding administration requires a browser session and CSRF protection; API tokens
+cannot manage it. `GET /api/settings/branding/export` downloads only the profile.
+`POST /api/settings/branding/validate` accepts `{ profile }`, validates an imported
+version-1 profile and returns it without saving. `PUT /api/settings/branding`
+accepts `{ profile, revision }`; `POST /api/settings/branding/reset` accepts
+`{ revision }`. Use the current revision from `GET /api/branding`. A stale revision
+returns `409 BRANDING_CONFLICT`; invalid fields or versions return `400 VALIDATION`.
+All fields are validated and unknown fields are rejected. Changes do not alter
+projects, credentials, hostnames, or provider resources.

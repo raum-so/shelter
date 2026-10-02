@@ -6,6 +6,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { App } from './App';
+import { loadBranding } from './lib/brand';
 import { ThemeProvider } from './components/ThemeProvider';
 import { Toaster } from './components/ui/sonner';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -34,7 +35,7 @@ const router = createBrowserRouter([
   },
 ]);
 
-createRoot(document.getElementById('root')!).render(
+void loadBranding().finally(() => createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
       <ThemeProvider defaultTheme="system">
@@ -49,4 +50,4 @@ createRoot(document.getElementById('root')!).render(
       </ThemeProvider>
     </I18nProvider>
   </StrictMode>,
-);
+));
