@@ -228,9 +228,7 @@ function mutableProject(database: Database, projectId: string): ProjectRow {
 }
 
 function assertNoActiveDeployment(database: Database, projectId: string): void {
-  const active = database.listDeployments(projectId, 20).some((deployment) => (
-    ["queued", "preparing", "building", "checking", "switching"].includes(deployment.status)
-  ));
+  const active = database.hasActiveProductionDeployment(projectId);
   if (active) {
     throw conflict(
       "Die Projektkonfiguration kann während eines laufenden Deployments nicht geändert werden",
@@ -757,7 +755,7 @@ export function registerProjectRoutes(
       let project = mutableProject(database, request.params.id);
       const staticBasePath = input.staticBasePath === undefined ? project.static_base_path : input.staticBasePath;
       assertStaticBasePathCompatible(staticBasePath, project.build_type);
-      if (database.listDeployments(project.id, 5).some((deployment) => ["queued", "preparing", "building", "checking", "switching"].includes(deployment.status))) {
+      if (database.hasActiveProductionDeployment(project.id)) {
         throw conflict("Für dieses Projekt läuft bereits ein Deployment", "DEPLOYMENT_ACTIVE");
       }
       if (input.staticBasePath !== undefined) {
@@ -824,6 +822,7 @@ export function registerProjectRoutes(
     assertEnvironmentSize(effectiveValues);
     if (!database.replaceEnvironmentForMutableProject(project.id, rows)) {
       mutableProject(database, project.id);
+      assertNoActiveDeployment(database, project.id);
       throw conflict("Projektstatus hat sich während der Änderung geändert", "PROJECT_MUTATION_CONFLICT");
     }
     return { environmentKeys: rows.map((row) => row.key) };

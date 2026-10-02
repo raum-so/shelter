@@ -337,3 +337,75 @@ source installer refuses to run while `.env` selects a
 `shelter/control-plane:release-*` image. Deliberately set
 `CONTROL_PLANE_IMAGE=shelter/control-plane:local` first if you explicitly want
 to leave the verified release channel.
+
+## CLI distribution on npm
+
+The CLI is distributed as `@shelter/cli`, with the `shelter` executable. The
+release packaging step derives its version from the existing consistent root
+version fields. It writes a temporary public package manifest; it does not
+change or commit a workspace version and does not change the version-only
+release PR policy. The workspace remains private to prevent accidental direct
+publication with its development version.
+
+`npm run check` builds and packs the CLI, then installs that exact tarball
+in a temporary, empty prefix with network access and lifecycle scripts disabled.
+It checks the installed executable, reported version, command discovery, license,
+and artifact integrity. The tarball contains compiled code, CLI TypeScript
+source, README and the repository license, with no runtime dependencies or
+installation scripts. To produce and check it locally:
+
+```sh
+npm run cli:pack
+npm run test:cli-package
+```
+
+Outputs are `dist/cli/shelter-cli.tgz` and `dist/cli/metadata.json`.
+`npm install --global ./dist/cli/shelter-cli.tgz` installs the local artifact.
+Nothing is published by these commands.
+
+The existing `release.yml` workflow retains this tested artifact in the verify
+job. After the immutable GitHub release is successfully published, its `npm-cli`
+job verifies the archive's SHA-512 integrity and tag/version identity, publishes
+that same archive, and checks the registry integrity. Stable versions use the
+`latest` npm dist-tag; prereleases use `next`. No second build occurs in the
+publishing job. PR and branch CI never publish packages.
+
+### One-time npm setup
+
+An npm package owner must complete this setup before enabling publication:
+
+1. Confirm ownership of the `@shelter` npm scope, or change the CLI package name
+   and installation documentation to a scope you control.
+2. Create the GitHub environment `npm`, restrict it to release tags, and configure
+   the desired maintainer review protection.
+3. If the npm package does not exist yet, bootstrap its first version manually
+   from the tested artifact of a reviewed, tagged Shelter release using an
+   authenticated npm owner account. Do not add an npm publishing token to this
+   repository or its CI. This initial publication requires separate maintainer
+   authorization; local packaging is not publication.
+4. In the npm package's **Trusted Publisher** settings, select GitHub Actions,
+   organization **raum-so**, repository **shelter**, workflow **release.yml**,
+   environment **npm**, and allow direct `npm publish`.
+5. Set the GitHub repository variable `SHELTER_NPM_PUBLISH_ENABLED` to `true`
+   before the next new Shelter release. Until then the npm job is skipped while
+   CLI packaging/install tests still run. The already bootstrapped npm version
+   must not be published a second time.
+
+The job uses GitHub OIDC (`id-token: write`) and public provenance, with no
+long-lived registry credential. It requires npm >=11.5.1 and a GitHub-hosted
+runner; see [npm's trusted-publishing documentation](https://docs.npmjs.com/trusted-publishers/).
+The current Node 24 setup is checked for the required npm version before publishing.
+
+After the first registry publication, users can run:
+
+```sh
+npm install --global @shelter/cli
+shelter --help
+npx --yes @shelter/cli --help
+```
+
+For reproducible automation, pin `@shelter/cli@<version>` rather than a dist-tag.
+A failed npm publication fails the npm job and does not roll back the already
+immutable GitHub release. Inspect registry state before recovery, and use a new
+reviewed release version for publication failures; never move a release tag,
+unpublish/reuse a package version, or bypass the existing release policy.

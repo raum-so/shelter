@@ -2,10 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadConfig, type AppConfig } from "../src/config.js";
 import { Database } from "../src/lib/database.js";
+import * as security from "../src/lib/security.js";
 import type { DeploymentRow, ProjectRow } from "../src/types/models.js";
 
 const directories: string[] = [];
@@ -122,11 +123,58 @@ async function context(): Promise<{
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const app of apps.splice(0)) await app.close();
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
 
 describe("per-domain site access", () => {
+  it("rejects access changes when domain deletion starts during password hashing", async () => {
+    const { app, database, mutationHeaders } = await context();
+    const originalHash = security.hashPassword;
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    vi.spyOn(security, "hashPassword").mockImplementationOnce(async (password) => {
+      entered();
+      await blocked;
+      return originalHash(password);
+    });
+    const update = app.inject({ method: "PUT",
+      url: "/api/projects/prj_site_access/domains/dom_site_access/access",
+      headers: mutationHeaders,
+      payload: { passwordProtectionEnabled: true, password: "a domain test password", accessSessionTtlHours: 72, seoIndexing: false }
+    }).then((response) => response);
+    await started;
+    const claimed = database.claimDomainDeletion("prj_site_access", "dom_site_access");
+    release();
+    const response = await update;
+    expect(claimed.kind).toBe("claimed");
+    expect(response.statusCode).toBe(409);
+    expect(database.getDomain("dom_site_access")?.password_protection_enabled).toBe(0);
+  });
+
+  it("uses the platform identity and escaped legal links on the public access page", async () => {
+    const { app, mutationHeaders } = await context();
+    const state = (await app.inject("/api/branding")).json();
+    const branding = await app.inject({ method: "PUT", url: "/api/settings/branding", headers: mutationHeaders,
+      payload: { revision: state.revision, profile: { ...state.profile, name: "Acme Cloud", claim: "Private workspaces", footer: "<script>unsafe</script>", legalUrl: "https://legal.example.com", light: { ...state.profile.light, primary: "#123456" } } } });
+    expect(branding.statusCode).toBe(200);
+    const protection = await app.inject({ method: "PUT", url: "/api/projects/prj_site_access/domains/dom_site_access/access", headers: mutationHeaders,
+      payload: { passwordProtectionEnabled: true, password: "public-site-test", accessSessionTtlHours: 72, seoIndexing: false } });
+    expect(protection.statusCode).toBe(200);
+    const page = await app.inject({ url: "/_shelter/access/dom_site_access", headers: { host: "private.example.com" } });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("Acme Cloud");
+    expect(page.body).toContain("Private workspaces");
+    expect(page.body).toContain('href="https://legal.example.com"');
+    expect(page.body).toContain("&lt;script&gt;unsafe&lt;/script&gt;");
+    expect(page.body).not.toContain("<script>unsafe");
+    expect(page.body).not.toContain("Shelter");
+    expect(page.body).toContain("--accent:#123456");
+  });
+
   it("protects a domain with a separate password and revocable host-bound visitor cookie", async () => {
     const { app, database, mutationHeaders } = await context();
     const update = await app.inject({

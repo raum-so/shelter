@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { Database } from "../src/lib/database.js";
+import * as security from "../src/lib/security.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -30,6 +31,82 @@ afterEach(() => {
 });
 
 describe("authentication and project API", () => {
+  it.each([
+    { email: 123, password: "invalid" },
+    { username: [], password: "invalid" },
+    { email: "admin@example.com", password: {} }
+  ])("returns a client error for malformed login credentials: %j", async (payload) => {
+    const app = await testApp({ LOG_LEVEL: "silent" });
+    try {
+      const response = await app.inject({ method: "POST", url: "/api/auth/login",
+        payload });
+      expect(response.statusCode).toBe(400);
+    } finally { await app.close(); }
+  });
+
+  it("rejects a password change that finishes after another password change", async () => {
+    const app = await testApp({ LOG_LEVEL: "silent" });
+    const login = await app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "admin@example.com", password: "correct horse battery staple" } });
+    const headers = { cookie: `shelter_session=${login.cookies[0]!.value}`,
+      "x-csrf-token": login.json().csrfToken as string };
+    const originalHash = security.hashPassword;
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    vi.spyOn(security, "hashPassword").mockImplementationOnce(async (password) => {
+      entered();
+      await blocked;
+      return originalHash(password);
+    });
+    const stale = app.inject({ method: "PUT", url: "/api/auth/password", headers,
+      payload: { currentPassword: "correct horse battery staple", newPassword: "stale password must not win" } }).then((response) => response);
+    await started;
+    const winner = await app.inject({ method: "PUT", url: "/api/auth/password", headers,
+      payload: { currentPassword: "correct horse battery staple", newPassword: "winning password stays active" } });
+    release();
+    const rejected = await stale;
+    try {
+      expect(winner.statusCode).toBe(200);
+      expect(rejected.statusCode).toBe(409);
+      const check = await app.inject({ method: "POST", url: "/api/auth/login",
+        payload: { email: "admin@example.com", password: "winning password stays active" } });
+      expect(check.statusCode).toBe(200);
+    } finally { await app.close(); }
+  });
+
+  it("does not create an old-password session after password rotation", async () => {
+    const app = await testApp({ LOG_LEVEL: "silent" });
+    const login = await app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "admin@example.com", password: "correct horse battery staple" } });
+    const headers = { cookie: `shelter_session=${login.cookies[0]!.value}`,
+      "x-csrf-token": login.json().csrfToken as string };
+    const originalVerify = security.verifyPassword;
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    vi.spyOn(security, "verifyPassword").mockImplementationOnce(async (...args) => {
+      const valid = await originalVerify(...args);
+      entered();
+      await blocked;
+      return valid;
+    });
+    const stale = app.inject({ method: "POST", url: "/api/auth/login",
+      payload: { email: "admin@example.com", password: "correct horse battery staple" } }).then((response) => response);
+    await started;
+    const rotated = await app.inject({ method: "PUT", url: "/api/auth/password", headers,
+      payload: { currentPassword: "correct horse battery staple", newPassword: "new password after rotation" } });
+    release();
+    const rejected = await stale;
+    try {
+      expect(rotated.statusCode).toBe(200);
+      expect(rejected.statusCode).toBe(401);
+      expect(rejected.cookies.filter((cookie) => cookie.name === "shelter_session")).toHaveLength(0);
+    } finally { await app.close(); }
+  });
+
   it("requires a password only for the first user bootstrap", async () => {
     const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "portsmith-bootstrap-"));
     temporaryDirectories.push(dataDirectory);
