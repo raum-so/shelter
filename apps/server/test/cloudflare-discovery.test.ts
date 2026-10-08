@@ -178,6 +178,16 @@ describe("Cloudflare zone and hostname discovery", () => {
           success: true,
           result: hostname === "taken.example.com"
             ? [{ id: "existing-record", name: hostname, type: "A", content: "192.0.2.10", proxied: true }]
+            : hostname === "example.com"
+              ? [
+                  { id: "mail-record", name: "EXAMPLE.COM.", type: "MX", content: "mail.example.com", proxied: false },
+                  { id: "spf-record", name: hostname, type: "TXT", content: "v=spf1 -all", proxied: false }
+                ]
+              : hostname?.startsWith("taken-")
+                ? [
+                    { id: "mail-record", name: hostname, type: "MX", content: "mail.example.com", proxied: false },
+                    { id: "conflicting-record", name: hostname, type: hostname.split("-")[1]!.split(".")[0]!.toUpperCase(), content: "foreign.example.net", proxied: false }
+                  ]
             : []
         });
       }
@@ -290,6 +300,11 @@ describe("Cloudflare zone and hostname discovery", () => {
     const existingDns = await check("taken.example.com");
     expect(existingDns.json()).toMatchObject({ availability: false, reason: "CLOUDFLARE_DNS_RECORD_EXISTS" });
 
+    for (const type of ["a", "aaaa", "cname", "ns"]) {
+      const conflicting = await check(`taken-${type}.example.com`);
+      expect(conflicting.json()).toMatchObject({ availability: false, reason: "CLOUDFLARE_DNS_RECORD_EXISTS" });
+    }
+
     const available = await check("FREE.Example.com.");
     expect(available.statusCode).toBe(200);
     expect(available.headers["cache-control"]).toBe("no-store");
@@ -308,6 +323,10 @@ describe("Cloudflare zone and hostname discovery", () => {
     const accountId = "e".repeat(32);
     const apiToken = "project-domain-api-token";
     const dnsWrites: Array<{ pathname: string; body: Record<string, unknown> }> = [];
+    const mailRecords = [
+      { id: "mail-record", name: "example.com", type: "MX", content: "mail.example.com", proxied: false },
+      { id: "spf-record", name: "example.com", type: "TXT", content: "v=spf1 -all", proxied: false }
+    ];
     const providerFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(input));
       expect(init?.redirect).toBe("error");
@@ -324,7 +343,9 @@ describe("Cloudflare zone and hostname discovery", () => {
         });
       }
       if (init?.method === "GET" && url.pathname.endsWith("/dns_records")) {
-        return Response.json({ success: true, result: [] });
+        const records = mailRecords.filter((record) => record.name === url.searchParams.get("name")
+          && (!url.searchParams.has("type") || record.type === url.searchParams.get("type")));
+        return Response.json({ success: true, result: records });
       }
       if (init?.method === "POST" && url.pathname.endsWith("/dns_records")) {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -419,6 +440,17 @@ describe("Cloudflare zone and hostname discovery", () => {
       pathname: "/client/v4/zones/parent-zone-id/dns_records",
       body: { name: "legacy.example.com", content: "managed-tunnel-id.cfargotunnel.com" }
     });
+
+    const apex = await addDomain({ hostname: "example.com", zoneId: "parent-zone-id" });
+    expect(apex.statusCode).toBe(201);
+    expect(database.listDomains("domain-project-id")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ hostname: "example.com", zone_id: "parent-zone-id", status: "active" })
+    ]));
+    expect(dnsWrites[2]).toMatchObject({
+      pathname: "/client/v4/zones/parent-zone-id/dns_records",
+      body: { type: "CNAME", name: "example.com", content: "managed-tunnel-id.cfargotunnel.com", proxied: true }
+    });
+    expect(providerFetch.mock.calls.every(([, init]) => init?.method === "GET" || init?.method === "POST")).toBe(true);
   });
 
   it("uses a user-selected account from a pending OAuth login", async () => {

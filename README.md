@@ -487,6 +487,8 @@ Before creating a record, Shelter checks:
 
 Each domain is routed through the same Cloudflare Tunnel to Traefik. A domain needs an active deployment before it can serve an application.
 
+Existing MX and TXT records do not block a project domain, including an apex domain used for email. Shelter leaves these records untouched and creates only the proxied CNAME for the tunnel. Existing A, AAAA, CNAME, NS, and other DNS record types at the same hostname still block the availability check and are not overwritten.
+
 The **Access & visibility** section configures each hostname independently:
 
 - Optional site-password protection runs in Traefik before the application, so it works for static sites, Next.js, Astro, and custom containers without a redeploy.
