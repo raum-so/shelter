@@ -112,6 +112,8 @@ jobs:
             ops/lib/release-bundle.sh \
             ops/verify-release-bundle.sh
           bash -n \
+            ops/enable-panel-updates.sh \
+            ops/panel-updater.sh \
             ops/deploy.sh \
             ops/deploy-release.sh \
             ops/lib/server-connection.sh \

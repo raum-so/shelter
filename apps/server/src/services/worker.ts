@@ -24,6 +24,7 @@ import { analyzeProjectDirectory, type ProjectAnalysis } from "./project-analysi
 import { captureProjectPreview, projectPreviewState } from "./project-preview.js";
 import { reconcileRouting } from "./routing.js";
 import { ServerMetricsCollector } from "./server-metrics.js";
+import { updateJob, updatePending } from "./control-plane-updates.js";
 import {
   COMPOSE_PROJECT_NAMES,
   deploymentContainerName,
@@ -181,6 +182,16 @@ export class DeploymentWorker {
 
     try {
       while (!this.stopping) {
+        if (updatePending(this.config)) {
+          // Acknowledge only between iterations, after all earlier work has drained.
+          // The host waits for this exact request before replacing the control plane.
+          try {
+            const job = updateJob(this.config);
+            if (job) this.database.setSetting("worker.update-pause", job.id);
+          } catch { /* Invalid state stays paused and requires operator inspection. */ }
+          await wait(750);
+          continue;
+        }
         await this.reconcileProjectNetworks();
         await this.reconcileCloudflaredRestart();
         if (await this.cleanupNextPullRequestPreview()) continue;

@@ -1,5 +1,6 @@
 import { brandCopy, type Branding, type BrandingState } from '../lib/brand';
 import type {
+  ControlPlaneUpdateState,
   ApiTokenSummary,
   CloudflareInput,
   CloudflareAccessProtection,
@@ -229,6 +230,10 @@ async function uploadArchive(file: File, onProgress?: (progress: UploadProgress)
 }
 
 export const api = {
+  controlPlaneUpdates: () => request<ControlPlaneUpdateState>('/api/settings/updates'),
+  checkControlPlaneUpdates: () => request<ControlPlaneUpdateState>('/api/settings/updates/check', { method: 'POST' }),
+  startControlPlaneUpdate: (input: { tag: string; fromVersion: string; currentPassword: string; backupConfirmed: true }) =>
+    request<ControlPlaneUpdateState>('/api/settings/updates', { method: 'POST', body: JSON.stringify(input) }),
   branding: () => request<BrandingState>('/api/branding'),
   saveBranding: (profile: Branding, revision: string) => request<BrandingState>('/api/settings/branding', { method: 'PUT', body: JSON.stringify({ profile, revision }) }),
   validateBranding: (profile: unknown) => request<{ profile: Branding }>('/api/settings/branding/validate', { method: 'POST', body: JSON.stringify({ profile }) }),

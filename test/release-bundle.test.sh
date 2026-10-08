@@ -67,6 +67,9 @@ setup_sandbox() {
   cp "$REPO_ROOT/compose.yaml" "$BUNDLE/compose.yaml"
   cp "$REPO_ROOT/bootstrap.sh" "$BUNDLE/bootstrap.sh"
   cp "$REPO_ROOT/ops/install-dependencies.sh" "$BUNDLE/ops/install-dependencies.sh"
+  cp "$REPO_ROOT/ops/enable-panel-updates.sh" "$BUNDLE/ops/enable-panel-updates.sh"
+  cp "$REPO_ROOT/ops/panel-updater.sh" "$BUNDLE/ops/panel-updater.sh"
+  cp "$REPO_ROOT/ops/lib/deploy-release-remote.sh" "$BUNDLE/ops/lib/deploy-release-remote.sh"
   cp "$REPO_ROOT/ops/create-release-manifest.sh" "$BUNDLE/ops/create-release-manifest.sh"
   cp "$REPO_ROOT/ops/download-release.sh" "$BUNDLE/ops/download-release.sh"
   cp "$REPO_ROOT/ops/install-release-bundle.sh" "$BUNDLE/ops/install-release-bundle.sh"
@@ -503,6 +506,10 @@ test_separate_installation_preserves_env_and_uses_central_lock() {
   assert_contains "$MOCK_INSTALL_LOG" 'ARGS=<--non-interactive><--no-pull>'
   cmp "$BUNDLE/compose.yaml" "$installation/compose.yaml" >/dev/null ||
     fail_test 'verified compose payload was not synchronized'
+  for payload in ops/enable-panel-updates.sh ops/panel-updater.sh ops/lib/deploy-release-remote.sh; do
+    cmp "$BUNDLE/$payload" "$installation/$payload" >/dev/null ||
+      fail_test "authenticated panel updater payload was not synchronized: $payload"
+  done
   cmp "$BUNDLE/release.manifest" "$installation/release.manifest" >/dev/null ||
     fail_test 'release manifest was not synchronized'
   assert_absent "$installation/.shelter-install.lock"

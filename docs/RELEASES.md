@@ -168,6 +168,60 @@ The lower-level `download-release.sh` and `install-release-bundle.sh` commands
 remain available for offline/manual operations. Do not replace this path with a
 source rsync when the intended production identity is an immutable release.
 
+## Updates from the panel
+
+**Settings → Updates** checks the public `raum-so/shelter` latest-release
+metadata on demand. It accepts only newer stable immutable releases with a
+published installer bundle; an API read never contacts GitHub. Forks and source
+builds continue to use the explicit operator commands above.
+
+After an SSH update to a release containing these helpers, a root operator can
+run `gh auth login`, then `/opt/shelter/ops/enable-panel-updates.sh`. The helper
+verifies the installed bundle, runs `doctor`, and enables
+`shelter-updater.service` plus a five-second systemd timer. It requires Bash,
+systemd, GitHub CLI with working release/asset attestation verification, jq,
+Docker Compose, rsync, OpenSSL, coreutils `timeout` and util-linux `flock`. The normal installation
+is `/opt/shelter`; for a custom trusted installation, configure an equivalent
+root service invoking `ops/panel-updater.sh /absolute/installation/path`.
+
+The API mounts only `.shelter-updates/requests` writable and
+`.shelter-updates/status` read-only; the worker mounts both read-only. These
+paths are mode `0700` and state files mode `0600`. Their local-development
+defaults are `DATA_DIR/updates/{requests,status}`, configurable with
+`UPDATE_REQUESTS_DIR` and `UPDATE_STATUS_DIR`; production Compose fixes the
+container mount paths. Do not share them with unrelated services. No GitHub
+host credentials or Docker socket are passed to the API.
+
+Panel admission requires a browser session, CSRF, current password, complete
+backup acknowledgement, a healthy worker, and no pending deployment or project
+deletion. The request contains only a random identifier, stable tag and current
+version. Mutations are held during the update; signed webhook deliveries may
+still queue. The host independently checks the latest immutable tag and running
+image version, waits up to 30 seconds for the exact worker pause acknowledgement,
+verifies the signed bundle using the trusted installed downloader, then reuses
+the SSH deployer's protected staging, shared ownership lock, repeated manifest
+validation, dry run, immutable directory publication, installer and final
+`doctor`. A worker acknowledgement timeout fails before installation.
+
+The service survives API and worker replacement and writes persistent progress.
+A separate host file lock serializes timer and direct operator invocations;
+completed identifiers cannot be replayed or reuse an old worker acknowledgement.
+The page polls status, tolerates the disconnect, and reloads after the installed
+version matches the successful target. Success reflects the installer's API,
+worker and routing checks; it does not assert a new end-to-end project deployment.
+Failures never trigger automatic rollback or removal of another operation's
+lock. An interrupted update needs operator inspection; never force-unlock it
+or start an older binary against an unverified database.
+
+Inspect `systemctl status shelter-updater.timer` and
+`journalctl -u shelter-updater.service` over SSH, then run `./install.sh doctor`.
+Use `./install.sh rollback` only for a ready rollback package. Disable future
+requests with `systemctl disable --now shelter-updater.timer`; let an active
+service complete. Root credentials must retain verification access. A systemd
+service exceeding 90 minutes fails and requires inspection. The service is
+disabled by default, and enabling it authorizes authenticated panel administrators
+to install future official stable Shelter releases as root.
+
 ## Required repository rules
 
 Repository settings are part of the security boundary and cannot be enforced

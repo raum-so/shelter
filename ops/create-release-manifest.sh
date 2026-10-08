@@ -115,6 +115,14 @@ do
   printf '%s  %s\n' "$payload_hash" "$relative_path" >> "$checksums_tmp"
 done
 
+# Additive updater payloads keep earlier authenticated bundles valid.
+for relative_path in ops/enable-panel-updates.sh ops/panel-updater.sh ops/lib/deploy-release-remote.sh; do
+  if [ -f "$SHELTER_RELEASE_BUNDLE_ROOT/$relative_path" ]; then
+    payload_hash=$(shelter_release_sha256 "$SHELTER_RELEASE_BUNDLE_ROOT/$relative_path")
+    printf '%s  %s\n' "$payload_hash" "$relative_path" >> "$checksums_tmp"
+  fi
+done
+
 SHELTER_RELEASE_CHECKSUMS_SHA256=$(shelter_release_sha256 "$checksums_tmp")
 {
   printf 'FORMAT_VERSION=1\n'
