@@ -626,6 +626,9 @@ jobs:
             ops/install-release-bundle.sh
             ops/lib/release-bundle.sh
             ops/verify-release-bundle.sh
+            ops/enable-panel-updates.sh
+            ops/panel-updater.sh
+            ops/lib/deploy-release-remote.sh
           )
           git archive --format=tar "$COMMIT_SHA" -- "${payloads[@]}" \
             | tar -xf - -C "$bundle_directory"

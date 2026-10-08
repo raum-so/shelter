@@ -104,6 +104,7 @@ rsync_args=(
   --exclude=.DS_Store
   --exclude='*.log'
   --exclude=.shelter-install.lock/
+  --exclude=.shelter-updates/
   --exclude=backups/
   --exclude=/releases/
   --exclude=node_modules/

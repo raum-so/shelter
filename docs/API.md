@@ -4,6 +4,14 @@ Shelter exposes the same project and deployment capabilities used by its web pan
 
 ## Discover the API
 
+Control-plane updates are browser-session-only endpoints, excluded from the
+personal-access-token contract: `GET /api/settings/updates` reads cached release
+and host status, `POST /api/settings/updates/check` refreshes verified stable
+release metadata, and `POST /api/settings/updates` accepts `{tag, fromVersion,
+currentPassword, backupConfirmed: true}` and returns HTTP 202 with the queued
+job. Both POST routes require CSRF. No API token scope grants access. See the
+[operator setup and recovery instructions](RELEASES.md#updates-from-the-panel).
+
 Replace `https://panel.example.com` with the public URL of your Shelter installation:
 
 ```text

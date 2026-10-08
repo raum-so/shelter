@@ -23,6 +23,7 @@ const ServerMetricsPage = lazy(() => import('./pages/ServerMetricsPage').then((m
 const ApiSettingsPage = lazy(() => import('./pages/ApiSettingsPage').then((module) => ({ default: module.ApiSettingsPage })));
 const BrandingPage = lazy(() => import('./pages/BrandingPage').then((module) => ({ default: module.BrandingPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const UpdatesPage = lazy(() => import('./pages/UpdatesPage').then((module) => ({ default: module.UpdatesPage })));
 const UploadProjectSourcePage = lazy(() => import('./pages/UploadProjectSourcePage').then((module) => ({ default: module.UploadProjectSourcePage })));
 
 function AppLoading() {
@@ -148,6 +149,7 @@ export function App() {
             <Route path="settings/branding" element={<BrandingPage />} />
             <Route path="settings/api" element={<ApiSettingsPage />} />
             <Route path="settings/security" element={<SettingsPage key="security" section="security" />} />
+            <Route path="settings/updates" element={<UpdatesPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

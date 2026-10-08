@@ -41,6 +41,8 @@ const ConfigSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(7080),
   DATA_DIR: z.string().default(path.resolve(process.cwd(), "data")),
+  UPDATE_REQUESTS_DIR: z.string().optional(),
+  UPDATE_STATUS_DIR: z.string().optional(),
   TRAEFIK_CONFIG_PATH: z.string().optional(),
   TUNNEL_TOKEN_PATH: z.string().optional(),
   WEB_DIST: z.string().default(path.resolve(process.cwd(), "apps/web/dist")),
@@ -98,8 +100,10 @@ const ConfigSchema = z.object({
   }
 });
 
-export type AppConfig = Omit<z.infer<typeof ConfigSchema>, "ADMIN_PASSWORD"> & {
+export type AppConfig = Omit<z.infer<typeof ConfigSchema>, "ADMIN_PASSWORD" | "UPDATE_REQUESTS_DIR" | "UPDATE_STATUS_DIR"> & {
   ADMIN_PASSWORD: string | undefined;
+  UPDATE_REQUESTS_DIR: string;
+  UPDATE_STATUS_DIR: string;
   databasePath: string;
   sourcesDir: string;
   workspacesDir: string;
@@ -175,6 +179,8 @@ export function loadConfig(input: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     ...parsed,
     ADMIN_PASSWORD: adminPassword,
+    UPDATE_REQUESTS_DIR: parsed.UPDATE_REQUESTS_DIR ?? path.join(parsed.DATA_DIR, "updates/requests"),
+    UPDATE_STATUS_DIR: parsed.UPDATE_STATUS_DIR ?? path.join(parsed.DATA_DIR, "updates/status"),
     databasePath,
     sourcesDir: path.join(parsed.DATA_DIR, "sources"),
     workspacesDir: path.join(parsed.DATA_DIR, "workspaces"),

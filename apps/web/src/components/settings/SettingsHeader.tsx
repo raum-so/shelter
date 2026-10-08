@@ -1,11 +1,11 @@
-import type { ReactNode } from 'react';
-import { Braces, Cloud, Palette, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Braces, Cloud, Palette, ShieldCheck, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useI18n } from '@/i18n';
 import { Button, PageIntro } from '@/components/ui';
 import { GitHubIcon } from '@/components/GitHubIcon';
 
-export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding';
+export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding' | 'updates';
 
 export function SettingsHeader({
   section,
@@ -15,7 +15,26 @@ export function SettingsHeader({
   status?: ReactNode;
 }) {
   const { t } = useI18n();
+  const activeItem = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    const active = activeItem.current;
+    const navigation = active?.parentElement;
+    if (!active || !navigation) return;
+    const reveal = () => {
+      const item = active.getBoundingClientRect(), viewport = navigation.getBoundingClientRect();
+      // Keep the selected section visible without moving the page, including
+      // width changes after fonts or asynchronously loaded content arrive.
+      if (item.right > viewport.right) navigation.scrollLeft += item.right - viewport.right + 16;
+      else if (item.left < viewport.left) navigation.scrollLeft += item.left - viewport.left - 16;
+    };
+    const observer = new ResizeObserver(reveal);
+    observer.observe(navigation);
+    observer.observe(active);
+    reveal();
+    return () => observer.disconnect();
+  }, [section]);
   const copy = {
+    updates: { title: t('Updates', 'Updates'), description: t('Check your installed version and update Shelter from a verified release.', 'Prüfe deine installierte Version und aktualisiere Shelter mit einem verifizierten Release.') },
     branding: { title: t('Branding', 'Branding'), description: t('Make this platform your own. Preview, save and transfer your brand identity.', 'Gestalte diese Plattform mit deiner Marke. Identität vorschauen, speichern und übertragen.') },
     cloudflare: {
       title: t('Cloudflare & routing', 'Cloudflare & Routing'),
@@ -53,6 +72,7 @@ export function SettingsHeader({
     { key: 'github' as const, to: '/settings/github', label: 'GitHub', icon: GitHubIcon },
     { key: 'api' as const, to: '/settings/api', label: 'API & CLI', icon: Braces },
     { key: 'security' as const, to: '/settings/security', label: t('Security', 'Sicherheit'), icon: ShieldCheck },
+    { key: 'updates' as const, to: '/settings/updates', label: t('Updates', 'Updates'), icon: Download },
   ];
 
   return (
@@ -68,7 +88,7 @@ export function SettingsHeader({
           const active = section === key;
           return (
             <Button key={key} asChild variant={active ? 'secondary' : 'ghost'} className="rounded-b-none">
-              <Link to={to} aria-current={active ? 'page' : undefined}>
+              <Link ref={active ? activeItem : undefined} to={to} aria-current={active ? 'page' : undefined}>
                 <Icon aria-hidden="true" /> {label}
               </Link>
             </Button>
