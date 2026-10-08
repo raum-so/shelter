@@ -828,7 +828,10 @@ export class CloudflareService {
         throw upstreamError("Cloudflare hat eine ungültige DNS-Antwort geliefert", "CLOUDFLARE_API");
       }
       if (records.some((record) => (
-        typeof record?.name === "string" && record.name.toLowerCase().replace(/\.$/, "") === hostname
+        typeof record?.name === "string" && record.name.toLowerCase().replace(/\.$/, "") === hostname &&
+        // Cloudflare's proxied CNAME can coexist with mail and verification
+        // records. Keep all other types (including malformed data) blocking.
+        (typeof record.type !== "string" || !["MX", "TXT"].includes(record.type.toUpperCase()))
       ))) {
         return true;
       }
