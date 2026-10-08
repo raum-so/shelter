@@ -689,3 +689,13 @@ export interface NewProjectEnvironmentVariable {
   key: string;
   value: string;
 }
+export interface ControlPlaneUpdateState {
+  currentVersion: string;
+  release: { tag: string; version: string; publishedAt: string; notes: string } | null;
+  checkedAt: string | null;
+  updateAvailable: boolean;
+  updaterReady: boolean;
+  releaseInstallation: boolean;
+  workerOnline: boolean;
+  job: { id: string; tag: string; fromVersion: string; phase: 'queued' | 'verifying' | 'installing' | 'succeeded' | 'failed'; updatedAt?: string } | null;
+}

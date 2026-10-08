@@ -111,6 +111,7 @@ export function AppShell({ session }: { session: Session }) {
     if (location.pathname === '/settings/github') return 'GitHub';
     if (location.pathname === '/settings/api') return 'API & CLI';
     if (location.pathname === '/settings/branding') return t('Branding', 'Branding');
+    if (location.pathname === '/settings/updates') return t('Updates', 'Updates');
     if (location.pathname === '/settings/security') return t('Security', 'Sicherheit');
     if (location.pathname.startsWith('/settings')) return t('Settings', 'Einstellungen');
     return t('Page not found', 'Seite nicht gefunden');

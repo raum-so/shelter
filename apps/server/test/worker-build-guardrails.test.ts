@@ -209,6 +209,26 @@ afterEach(() => {
 });
 
 describe("build guardrail configuration", () => {
+  it("acknowledges a panel update at an idle boundary while leaving queued deployments untouched", async () => {
+    const harness = builderHarness();
+    const command: WorkerCommandRunner = async (name, args, options) => {
+      if (args[0] === "version") return commandResult("26.0.0");
+      return harness.command(name, args, options);
+    };
+    const { config, database, worker } = context({}, command);
+    fs.mkdirSync(config.UPDATE_REQUESTS_DIR, { recursive: true });
+    const id = "a".repeat(32);
+    fs.writeFileSync(path.join(config.UPDATE_REQUESTS_DIR, "request.json"), JSON.stringify({ id, tag: "v1.0.0", fromVersion: "0.7.1" }));
+    database.createProject(project());
+    database.sqlite.prepare("INSERT INTO deployments (id,project_id,status,created_at) VALUES ('queued-update','prj_build_guardrails','queued','now')").run();
+    const running = worker.run();
+    try {
+      await vi.waitFor(() => expect(database.getSetting("worker.update-pause")).toBe(id), { timeout: 3000 });
+      expect(database.getDeployment("queued-update")?.status).toBe("queued");
+      expect(database.getSetting("worker.heartbeat")).not.toBeNull();
+    } finally { worker.stop(); await running; }
+  });
+
   it("uses bounded defaults and accepts an explicit finite build budget", () => {
     const defaults = loadConfig({ NODE_ENV: "test" });
     expect(defaults).toMatchObject({

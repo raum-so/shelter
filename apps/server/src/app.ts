@@ -28,6 +28,7 @@ import { registerUploadRoutes, UploadService } from "./services/uploads.js";
 import { PreviewDnsReconciler } from "./services/preview-dns-reconciler.js";
 import { brandHtml, registerBrandingRoutes } from "./services/branding.js";
 import { registerSiteAccessRoutes } from "./services/site-access.js";
+import { registerUpdateRoutes } from "./routes/updates.js";
 
 export async function createApp(config: AppConfig, database = new Database(config)): Promise<FastifyInstance> {
   await bootstrapAdmin(config, database);
@@ -101,6 +102,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
   });
 
   installAuthHook(app, database);
+  registerUpdateRoutes(app, config, database);
   const uploads = new UploadService(config, database);
   const cloudflare = new CloudflareService(config, database);
   const github = new GitHubService(config, database);

@@ -21,6 +21,8 @@ x-control-plane: &control-plane
     HOST: 0.0.0.0
     PORT: 7080
     DATA_DIR: /data
+    UPDATE_REQUESTS_DIR: /updates/requests
+    UPDATE_STATUS_DIR: /updates/status
     TRAEFIK_CONFIG_PATH: /routing/dynamic.yml
     TUNNEL_TOKEN_PATH: /tunnel/tunnel-token
     WEB_DIST: /app/apps/web/dist
@@ -51,6 +53,8 @@ services:
       - shelter-data:/data
       - shelter-routing:/routing
       - shelter-tunnel:/tunnel
+      - ./.shelter-updates/requests:/updates/requests
+      - ./.shelter-updates/status:/updates/status:ro
     networks:
       control:
         ipv4_address: ${API_CONTROL_IP:-10.253.253.2}
@@ -69,6 +73,8 @@ services:
       <<: *metrics-environment
       NODE_ENV: production
       DATA_DIR: /data
+      UPDATE_REQUESTS_DIR: /updates/requests
+      UPDATE_STATUS_DIR: /updates/status
       TRAEFIK_CONFIG_PATH: /routing/dynamic.yml
       APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
       RUNTIME_NETWORK: ${RUNTIME_NETWORK:-shelter-runtime}
@@ -93,6 +99,8 @@ services:
       - shelter-data:/data
       - shelter-routing:/routing
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - ./.shelter-updates/requests:/updates/requests:ro
+      - ./.shelter-updates/status:/updates/status:ro
     networks:
       control:
         ipv4_address: ${WORKER_CONTROL_IP:-10.253.253.5}

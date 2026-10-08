@@ -639,6 +639,28 @@ Redeploy every project on a new VPS so application images and stable containers 
 
 ## Update
 
+The panel includes **Settings → Updates** with the installed version, a manual
+check for the latest immutable stable release, and release notes. Direct panel
+updates require a one-time opt-in on an installation using verified releases:
+
+```sh
+# As root on the VPS, after installing a release containing the updater:
+gh auth login
+cd /opt/shelter
+./ops/enable-panel-updates.sh
+```
+
+This enables a root systemd timer that processes only fixed-repository release
+requests. Starting an update requires your current password and confirmation
+of a complete backup. Existing deployments and deletions must finish first.
+The host verifies the signed bundle, waits for the worker to pause, and uses
+the same immutable staging, snapshot, digest installation and final `doctor`
+as the SSH deployer. The page reconnects and reloads after success. If it fails,
+inspect `journalctl -u shelter-updater.service` and run `./install.sh doctor`
+over SSH; use rollback only when doctor reports it ready. Disable future panel
+updates with `systemctl disable --now shelter-updater.timer`. This does not
+cancel an update already running. See [the release guide](docs/RELEASES.md#updates-from-the-panel).
+
 For production, use the verified-release deployer from a trusted local Shelter
 checkout. It authenticates the immutable GitHub Release and asset attestation
 locally, transports only that bundle, verifies it again in a root-owned remote
@@ -852,7 +874,7 @@ A real end-to-end smoke test requires a disposable VPS, an active Cloudflare zon
 - no Cloudflare for SaaS custom hostnames for customer-owned accounts,
 - deployment switches avoid planned downtime, but a VPS, Docker daemon, Traefik, or storage failure can still interrupt service because there is no multi-node high availability,
 - one administrator and no user management,
-- no integrated backup or control-plane update workflow in the panel.
+- no integrated complete-backup workflow in the panel.
 
 ## Community
 
