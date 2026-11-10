@@ -1,5 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './client';
+import { api, setCsrfToken } from './client';
+
+describe('empty mutation requests', () => {
+  afterEach(() => {
+    setCsrfToken('');
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['POST', '/api/settings/cloudflare/oauth/start', () => api.startCloudflareOAuth()],
+    ['POST', '/api/settings/cloudflare/test', () => api.testCloudflare()],
+    ['DELETE', '/api/settings/api-tokens/token-id', () => api.revokeApiToken('token-id')],
+  ] as const)('types %s %s so proxy framing cannot cause an unsupported media type', async (method, path, send) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}));
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken('csrf-test-value');
+
+    await send();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    const sent = new Request(new URL(String(url), 'https://panel.example.com'), init);
+    expect(new URL(sent.url).pathname).toBe(path);
+    expect(sent.method).toBe(method);
+    expect(sent.headers.get('content-type')).toBe('application/json');
+    expect(await sent.text()).toBe('null');
+    expect(sent.headers.get('x-csrf-token')).toBe('csrf-test-value');
+    expect(sent.credentials).toBe('include');
+  });
+});
 
 describe('GitHub repository api', () => {
   afterEach(() => {
@@ -90,7 +118,6 @@ describe('deployment api', () => {
       method: 'POST',
       credentials: 'include',
     }));
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
   });
 
   it('updates project settings and unwraps the normalized project', async () => {
@@ -170,7 +197,6 @@ describe('deployment api', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/prj%2F42/deploy', expect.objectContaining({
       method: 'POST',
-      body: undefined,
     }));
   });
 });
@@ -320,7 +346,6 @@ describe('github api', () => {
         credentials: 'include',
       }),
     );
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
   });
 
   it('creates a project from a GitHub App repository', async () => {

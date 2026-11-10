@@ -71,18 +71,22 @@ function extractMessage(payload: unknown, fallback: string) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  // Proxies can forward empty mutations with chunked framing. A typed JSON null
+  // preserves the no-arguments contract without relying on a zero-length body.
+  const body = init.body ?? (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'null' : undefined);
   const headers = new Headers(init.headers);
-  const isFormData = init.body instanceof FormData;
-  if (init.body && !isFormData && !headers.has('content-type')) {
+  const isFormData = body instanceof FormData;
+  if (body && !isFormData && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const method = (init.method ?? 'GET').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers.set('x-csrf-token', csrfToken);
   }
 
   const response = await fetch(path, {
     ...init,
+    body,
     headers,
     credentials: 'include',
   });

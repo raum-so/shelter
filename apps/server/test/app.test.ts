@@ -587,9 +587,12 @@ describe("Cloudflare OAuth", () => {
       headers: {
         cookie: `portsmith_session=${auth.sessionCookie}`,
         "x-csrf-token": auth.csrfToken,
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
         origin: "http://localhost:7080",
         host: "localhost:7080"
-      }
+      },
+      payload: "null"
     });
     expect(started.statusCode).toBe(200);
     expect(started.headers["cache-control"]).toBe("no-store");
