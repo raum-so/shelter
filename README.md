@@ -185,6 +185,20 @@ API and worker share a WAL-enabled SQLite database in `shelter-data`. Persistent
 
 Only the worker mounts `/var/run/docker.sock`. The worker stays on the control network and is not attached to application networks. Every project receives its own managed bridge network containing only that project's runtime generation, short-lived helpers when needed, and the current Shelter Traefik generation; projects cannot address one another through a shared Shelter runtime network. Traefik uses its file provider and needs no socket. TLS terminates at Cloudflare Edge. The panel remains available on `127.0.0.1:${PANEL_PORT}` for bootstrap and emergency access through SSH.
 
+If Docker's default address pools are exhausted, reserve an unused private range
+with `PROJECT_NETWORK_POOL`, for example `10.251.0.0/16`. Check the entire range
+against host, LAN, VPN, cloud and Docker routes first. Shelter accepts canonical
+`10.x.0.0/16` ranges and allocates up to 256 separate `/24` project networks,
+skipping subnets already claimed by Docker. Keep this range separate from
+`SUPABASE_NETWORK_POOL` and the control subnet. Apply the setting through the
+normal installer, or recreate only the worker with
+`docker compose up -d --no-deps worker` when its image is already current.
+Existing networks, attachments and volumes are reused unchanged; no Docker
+daemon restart or network pruning is required. Unsetting the value restores
+Docker's default allocation for new networks only. If neither pool has room,
+new deployments fail with `PROJECT_NETWORK_CAPACITY`; reconciliation retains
+existing attachments and continues processing other projects.
+
 Candidate health probes and screenshot captures run in disposable containers on the matching project network. They have no Docker socket or host bind mount, use a read-only root filesystem, drop all capabilities, enforce memory/CPU/PID/time bounds, and are ownership-checked before removal. Builds use Shelter's dedicated Docker-container BuildKit builder with independently configured memory, swap, CPU, PID, and maximum-parallelism bounds plus a builder-cache GC target. A continuously sampled free-space guard cancels cancellable source/build work and refuses completion when the data filesystem falls below `BUILD_MIN_FREE_GB`.
 
 The worker samples host capacity, managed-container aggregates, and each active project's production runtime at the configured metrics interval (15 seconds by default). It stores at most the configured retention window in SQLite; Docker inspection is restricted to Shelter-owned containers whose project and active-deployment labels match database state. Host and project observability endpoints are administrator-session-only and never receive the Docker socket.
@@ -587,6 +601,7 @@ Start from `.env.example`. The most commonly changed settings are:
 | `CLOUDFLARE_API_TOKEN` | empty | Optional API-token fallback credential |
 | `CLOUDFLARE_OAUTH_*` | empty | Private OAuth-client configuration |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Optional host socket path |
+| `PROJECT_NETWORK_POOL` | empty | Optional reserved private `/16` for new project networks |
 
 The control subnet and fixed service IPs are also configurable. If the default `10.253.253.0/24` overlaps a VPS, VPN, or cloud network, change `CONTROL_SUBNET` and all four `*_CONTROL_IP` values together.
 

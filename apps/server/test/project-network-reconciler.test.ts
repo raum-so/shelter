@@ -213,7 +213,7 @@ describe("project network reconciliation", () => {
       return { stdout: "", stderr: "", exitCode: 0 };
     });
 
-    await expect(new ProjectNetworkReconciler(config, database, command).reconcileAll()).resolves.toBeUndefined();
+    await expect(new ProjectNetworkReconciler(config, database, command).reconcileAll()).resolves.toEqual([]);
     expect(command.mock.calls.some(([, args]) => args[0] === "network" && args[1] === "connect")).toBe(false);
   });
 
@@ -245,7 +245,49 @@ describe("project network reconciliation", () => {
       return { stdout: "", stderr: "", exitCode: 0 };
     });
 
-    await expect(new ProjectNetworkReconciler(config, database, command).reconcileAll()).resolves.toBeUndefined();
+    await expect(new ProjectNetworkReconciler(config, database, command).reconcileAll()).resolves.toEqual([]);
     expect(command.mock.calls.some(([, args]) => args[0] === "network" && args[1] === "connect")).toBe(false);
   });
+});
+
+it("keeps existing attachments and continues other projects when one network pool is exhausted", async () => {
+  const { config, database } = context();
+  const blocked = project("prj_capacity"), healthy = project("prj_healthy");
+  database.createProject(blocked);
+  database.createProject(healthy);
+  const calls: string[][] = [];
+  const success = (value: unknown) => ({ stdout: JSON.stringify(value), stderr: "", exitCode: 0 });
+  const command: ProjectNetworkCommandRunner = async (_binary, args) => {
+    calls.push(args);
+    if (args[0] === "ps") return {
+      stdout: args.includes(`label=shelter.project=${blocked.id}`) ? "shelter-run-capacity"
+        : args.includes(`label=shelter.project=${healthy.id}`) ? "shelter-run-healthy" : "",
+      stderr: "", exitCode: 0
+    };
+    if (args[0] === "network" && args[1] === "inspect") return args.at(-1) === projectNetworkName(blocked.id)
+      ? { stdout: "", stderr: "No such network", exitCode: 1 }
+      : success({ "shelter.managed": "true", "shelter.project": healthy.id, "shelter.purpose": "project" });
+    if (args[0] === "network" && args[1] === "create") return {
+      stdout: "", stderr: "all predefined address pools have been fully subnetted", exitCode: 1
+    };
+    if (args[0] === "inspect" && args.at(-1) === "shelter-traefik") return success({
+      id: "f".repeat(64), name: "/shelter-traefik", running: true,
+      labels: {
+        "shelter.control-plane": "traefik",
+        "com.docker.compose.project": "shelter", "com.docker.compose.service": "traefik"
+      }
+    });
+    if (args[0] === "inspect" && args.some(value => value.includes('"name"'))) {
+      const id = args.at(-1) === "shelter-run-capacity" ? blocked.id : healthy.id;
+      return success({
+        name: "/" + args.at(-1), image: `shelter/${id}:latest`,
+        labels: { "shelter.managed": "true", "shelter.project": id }
+      });
+    }
+    if (args[0] === "inspect") return success({ [projectNetworkName(healthy.id)]: {} });
+    throw new Error("Unexpected mutation");
+  };
+  await expect(new ProjectNetworkReconciler(config, database, command).reconcileAll()).resolves.toEqual([blocked.id]);
+  expect(calls.some(args => args[0] === "inspect" && args.at(-1) === "shelter-run-healthy")).toBe(true);
+  expect(calls.some(args => ["stop", "rm"].includes(args[0]!) || args[1] === "disconnect")).toBe(false);
 });

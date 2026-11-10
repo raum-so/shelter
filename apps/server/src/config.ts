@@ -57,6 +57,18 @@ const ConfigSchema = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/)
     .default("shelter/control-plane:local"),
   RUNTIME_NETWORK: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/).default("shelter-runtime"),
+  PROJECT_NETWORK_POOL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().regex(/^10\.(?:0|[1-9]\d{0,2})\.0\.0\/16$/)
+      .refine((value) => Number(value.split(".")[1]) <= 255, "Expected a private 10.x.0.0/16 network")
+      .optional(),
+  ),
+  SUPABASE_NETWORK_POOL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().regex(/^10\.\d{1,3}\.0\.0\/16$/)
+      .refine((value) => Number(value.split(".")[1]) <= 255, "Expected a private 10.x.0.0/16 network")
+      .optional(),
+  ),
   TRAEFIK_SERVICE_URL: z.url().default("http://traefik:80"),
   TRUSTED_PROXY_IP: z.ipv4().default("10.253.253.3"),
   TRUSTED_CLOUDFLARED_IP: z.ipv4().default("10.253.253.4"),
@@ -92,6 +104,17 @@ const ConfigSchema = z.object({
       .default(CLOUDFLARE_REQUIRED_OAUTH_SCOPES.join(" "))
   )
 }).superRefine((config, context) => {
+  if (config.PROJECT_NETWORK_POOL) {
+    const prefix = config.PROJECT_NETWORK_POOL.split(".").slice(0, 2).join(".") + ".";
+    if (config.PROJECT_NETWORK_POOL === config.SUPABASE_NETWORK_POOL || config.TRUSTED_PROXY_IP.startsWith(prefix) || config.TRUSTED_CLOUDFLARED_IP.startsWith(prefix)) {
+      context.addIssue({
+        code: "custom",
+        path: ["PROJECT_NETWORK_POOL"],
+        message: "Reserve a separate project range outside Supabase and control-plane networks"
+      });
+    }
+  }
+
   if (parseDockerMemoryBytes(config.BUILD_MEMORY_SWAP) < parseDockerMemoryBytes(config.BUILD_MEMORY)) {
     context.addIssue({
       code: "custom",

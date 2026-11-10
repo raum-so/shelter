@@ -155,6 +155,7 @@ export class DeploymentWorker {
   private readonly projectNetworks: ProjectNetworkReconciler;
   private buildResourceLimitsSupported = false;
   private lastProjectNetworkReconcile = 0;
+  private networkCapacityWarning = "";
 
   constructor(
     private readonly config: AppConfig,
@@ -526,7 +527,12 @@ export class DeploymentWorker {
   private async reconcileProjectNetworks(force = false): Promise<void> {
     const now = Date.now();
     if (!force && now - this.lastProjectNetworkReconcile < PROJECT_NETWORK_RECONCILE_INTERVAL_MS) return;
-    await this.projectNetworks.reconcileAll();
+    const blocked = await this.projectNetworks.reconcileAll();
+    const warning = blocked.join(",");
+    if (warning !== this.networkCapacityWarning) {
+      if (blocked.length) console.warn(`PROJECT_NETWORK_CAPACITY: ${blocked.length} project(s) keep their existing networks. Configure or expand PROJECT_NETWORK_POOL.`);
+      this.networkCapacityWarning = warning;
+    }
     this.lastProjectNetworkReconcile = now;
   }
 
