@@ -17,16 +17,16 @@
     "@fastify/formbody": "^8.0.2",
     "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^11.1.0",
-    "@fastify/static": "^10.1.0",
+    "@fastify/static": "^10.1.10",
     "better-sqlite3": "^12.11.1",
     "fastify": "^5.10.0",
     "nodemailer": "^10.2.1",
     "qrcode": "^1.5.4",
+    "tldts": "^7.4.19",
     "undici": "^8.7.0",
     "yaml": "^2.9.1",
     "yauzl": "^3.4.0",
-    "zod": "^4.4.3",
-    "tldts": "^7.4.19"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
