@@ -237,8 +237,9 @@ replace that live acceptance test.
 
 As of 2026-11-10, the source pilot passed reauthorization, the connection test,
 fallback verification, persistence across an update, and a live customer's
-TXT/CNAME verification. At the handoff checkpoint, certificate validation for
-that customer was still pending. Complete customer-domain acceptance remains
-outstanding; see
+TXT/CNAME verification, certificate issuance, and browser access at the customer
+hostname with valid HTTPS and HTTP 200. The operator's existing blanket redirect
+needed the ACME-path exception described above. Application-specific tenancy,
+both deployment layouts, and destructive cleanup acceptance remain outstanding; see
 [the agent handoff](AGENT-HANDOFF.md). Other installations must perform their own
 setup and verification.
