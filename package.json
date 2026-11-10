@@ -32,5 +32,10 @@
   "devDependencies": {
     "concurrently": "^10.0.3",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "monaco-editor": {
+      "dompurify": "3.4.17"
+    }
   }
 }
