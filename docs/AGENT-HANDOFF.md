@@ -98,6 +98,19 @@ end-to-end acceptance.
 
 ## Continue safely
 
+- Envoy's internal Basic-auth filter currently accepts only `{SHA}` htpasswd
+  entries. The Studio credential is generated with 24 cryptographically random
+  bytes on creation and rotation; it is never a human-selected password. The
+  SHA-1 digest is a compatibility verifier inside the isolated instance gateway,
+  not Shelter's administrator password storage or a signature. Do not allow
+  user-chosen Studio credentials with this verifier. See the
+  [Envoy filter documentation](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/basic_auth_filter).
+  Administrator passwords retain the separate scrypt-based authentication path.
+  The Studio proxy also hashes two in-memory Authorization values to a fixed
+  length solely for `timingSafeEqual`; these digests are neither stored nor used
+  as password verifiers. CodeQL's password-storage findings for these locations
+  were reviewed with these data flows and recorded as false positives, without
+  disabling either scanner rule.
 - Read [Supabase operations](SUPABASE.md), [SMTP](SMTP.md), and
   [the security model](../SECURITY.md) before changing managed services or MFA.
 - Keep source-checkout and published-release deployments distinct. Local source
