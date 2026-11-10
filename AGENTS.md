@@ -6,6 +6,13 @@ This file applies to the entire repository. It defines the guardrails for coding
 
 Shelter is a self-hosted deployment control plane for a single VPS. Changes should make operations simpler without silently weakening security boundaries, upgrade paths, or existing installations.
 
+Before changing or releasing the platform integrations, read
+[the agent handoff](docs/AGENT-HANDOFF.md). For customer domains, also read
+[the external-domain guide](docs/EXTERNAL-DOMAINS.md); it records the ownership,
+OAuth upgrade, routing, and rollback contracts. Keep those documents current and
+distinguish a tested pilot installation from a published release or a completed
+customer-domain acceptance test.
+
 ## Repository map
 
 | Path | Purpose |

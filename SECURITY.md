@@ -353,7 +353,7 @@ public HTTPS destinations with private-address rejection at connection time,
 bounded multipart uploads and verified S3 checksums. Recovery tests use isolated
 volume generations and do not attach their gateway to public routing.
 
-### Administrator two-factor authentication
+## Administrator two-factor authentication
 
 Administrators can enroll an authenticator under Settings → Security. Enrollment
 requires the current password and a valid six-digit TOTP before protection becomes
@@ -376,7 +376,7 @@ bounded resource identifiers. It contains no request/response bodies, passwords,
 OTP values, session cookies, API keys or function source. The latest 10,000 events
 are retained locally; a host administrator can alter this SQLite data, so this is
 an operational audit trail rather than an external tamper-proof compliance log.
-### External customer domains
+## External customer domains
 
 External CNAME bindings require a random, binding-specific DNS TXT proof before
 Shelter creates a Cloudflare for SaaS custom hostname. CNAME, hostname activation,

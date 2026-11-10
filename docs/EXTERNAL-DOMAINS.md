@@ -194,3 +194,27 @@ end: DNS propagation, certificate issuance, original Host at the app, both
 project layouts, removal and certificate cleanup. Local provider mocks do not
 replace that live acceptance test.
 
+## Upgrade checklist for an existing installation
+
+1. Install a published Shelter release containing this feature. A source pilot
+   on another VPS does not update this installation automatically.
+2. Add `ssl-and-certificates.write` to the existing private Cloudflare OAuth
+   client's allowed and required scopes. Preserve its client ID, secret,
+   callbacks, and existing permissions. API-token users need the equivalent
+   zone-scoped **SSL and Certificates Edit** permission instead.
+3. Use **Reconnect Cloudflare**, select the existing account, approve the
+   requested scopes, then adopt the login with the existing tunnel and panel
+   hostname. Do not disconnect first. `invalid_scope` means the registered
+   client does not allow one of the requested scopes.
+4. Run **Test connection**, then verify and save the shared SaaS setup with an
+   active fallback. Confirm that the UI reports ready for customer domains.
+5. Add an external domain in a project and complete a disposable end-to-end
+   acceptance test before onboarding production customers.
+
+As of 2026-11-10, the source pilot passed reauthorization, the connection test,
+fallback verification, persistence across an update, and a live customer's
+TXT/CNAME verification. At the handoff checkpoint, certificate validation for
+that customer was still pending. Complete customer-domain acceptance remains
+outstanding; see
+[the agent handoff](AGENT-HANDOFF.md). Other installations must perform their own
+setup and verification.
