@@ -983,6 +983,10 @@ export class SupabaseRuntime {
         method: "POST",
         token: secrets.serviceKey,
         validation: jobId,
+      }).catch(() => {
+        // A candidate that cannot boot can exhaust the bounded request too.
+        // Report validation failure without exposing internal Docker diagnostics.
+        throw new Error("FUNCTION_VALIDATION_FAILED");
       });
       if (result.status !== 204) throw new Error("FUNCTION_VALIDATION_FAILED");
     } finally {
