@@ -41,6 +41,30 @@ saved connection targets are never replaced with the suggested primary domain.
 This shared setup is optional and remains collapsed until you open it. Configure
 it once per Shelter installation, not once per project.
 
+### Allow certificate validation through redirect rules
+
+Custom **Redirect Rules** must not redirect the HTTP certificate-validation
+path to HTTPS before a certificate exists. Exclude
+`/.well-known/acme-challenge/` from a blanket HTTP-to-HTTPS rule, for example:
+
+```text
+(http.request.full_uri wildcard r"http://*")
+and not starts_with(http.request.uri.path, "/.well-known/acme-challenge/")
+```
+
+Keep the existing redirect action and other conditions. This exception allows
+the CA to retrieve its public validation token; it does not require disabling
+HTTPS redirects for application traffic. Cloudflare's **Always Use HTTPS**
+setting is a separate feature and does not need to be disabled for validation.
+See [Cloudflare's DCV redirect guidance](https://developers.cloudflare.com/ssl/edge-certificates/changing-dcv-method/troubleshooting/#redirection).
+
+When TXT ownership and CNAME are ready but HTTPS remains pending, inspect the
+current custom hostname's `ssl.validation_errors` and HTTP validation URL. A
+redirect to an HTTPS endpoint with no certificate can prevent validation. Fix
+the rule, then request a configuration-neutral recheck if needed; preserve the
+current `ssl.method`, `ssl.type`, and `ssl.settings`. Never delete and recreate
+an active customer's binding just to force validation.
+
 Shelter validates the active zone, fallback origin, proxy status, and exact
 owned tunnel target. The primary domain can be the shared CNAME destination,
 but it remains reserved for the panel and cannot be assigned to a project.
