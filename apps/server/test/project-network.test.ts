@@ -1,3 +1,4 @@
+import { loadConfig } from "../src/config.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   disconnectContainerFromNetwork,
@@ -182,5 +183,72 @@ describe("project runtime networks", () => {
     await expect(disconnectContainerFromNetwork(network, "missing", command)).resolves.toBeUndefined();
     await expect(removeProjectNetwork(projectId, command)).rejects.toThrow(/unerwartete Endpunkte: unexpected-app/);
     expect(command).not.toHaveBeenCalledWith("docker", ["network", "rm", network]);
+  });
+});
+
+describe("reserved project address pool", () => {
+  it("allocates a free /24 while leaving occupied subnets alone", async () => {
+    const attempted: string[] = [];
+    let labels: string | null = null;
+    const command: ProjectNetworkCommandRunner = async (_binary, args) => {
+      if (args[1] === "inspect") return labels ? result(labels) : result("", 1, "No such network");
+      if (args[1] === "create") {
+        if (!args.includes("--subnet")) return result("", 1, "all predefined address pools have been fully subnetted");
+        attempted.push(args[args.indexOf("--subnet") + 1]!);
+        if (attempted.length === 1) return result("", 1, "Pool overlaps with other one on this address space");
+        labels = JSON.stringify({
+          "shelter.managed": "true", "shelter.project": "prj_pool", "shelter.purpose": "project"
+        });
+        return result("created");
+      }
+      throw new Error("Unexpected mutation");
+    };
+    await expect(ensureProjectNetwork("prj_pool", command, "10.251.0.0/16")).resolves.toBe(projectNetworkName("prj_pool"));
+    expect(attempted).toHaveLength(2);
+    expect(new Set(attempted).size).toBe(2);
+    for (const subnet of attempted) expect(subnet).toMatch(/^10\.251\.\d+\.0\/24$/);
+  });
+
+  it("reports exhausted capacity without deleting or renumbering any network", async () => {
+    const command = vi.fn<ProjectNetworkCommandRunner>(async (_binary, args) => args[1] === "inspect"
+      ? result("", 1, "No such network")
+      : result("", 1, "all predefined address pools have been fully subnetted"));
+    await expect(ensureProjectNetwork("prj_full", command)).rejects.toMatchObject({ code: "PROJECT_NETWORK_CAPACITY" });
+    expect(command.mock.calls.every(([, args]) => ["inspect", "create"].includes(args[1]!))).toBe(true);
+  });
+
+  it("reuses existing project networks even after the reserved pool changes", async () => {
+    const command = vi.fn<ProjectNetworkCommandRunner>().mockResolvedValue(result(JSON.stringify({
+      "shelter.managed": "true", "shelter.project": "prj_existing", "shelter.purpose": "project"
+    })));
+    await expect(ensureProjectNetwork("prj_existing", command, "10.251.0.0/16"))
+      .resolves.toBe(projectNetworkName("prj_existing"));
+    expect(command).toHaveBeenCalledTimes(1);
+  });
+
+  it("validates the pool and keeps it separate from Supabase and control networking", () => {
+    expect(loadConfig({ NODE_ENV: "test", PROJECT_NETWORK_POOL: "10.251.0.0/16", SUPABASE_NETWORK_POOL: "10.252.0.0/16" })
+      .PROJECT_NETWORK_POOL).toBe("10.251.0.0/16");
+    for (const pool of [
+      "192.168.0.0/16", "10.251.1.0/16", "10.251.0.0/24", "10.999.0.0/16",
+      "10.251.0.0/16;touch /tmp/test", "10.253.0.0/16", "10.252.0.0/16"
+    ]) {
+      expect(() => loadConfig({ NODE_ENV: "test", PROJECT_NETWORK_POOL: pool, SUPABASE_NETWORK_POOL: "10.252.0.0/16" })).toThrow();
+    }
+  });
+
+  it("bounds allocation and fails closed when the entire configured pool overlaps", async () => {
+    const attempted = new Set<string>();
+    const command: ProjectNetworkCommandRunner = async (_binary, args) => {
+      if (args[1] === "inspect") return result("", 1, "No such network");
+      if (args[1] === "create") {
+        attempted.add(args[args.indexOf("--subnet") + 1]!);
+        return result("", 1, "Pool overlaps with other one on this address space");
+      }
+      throw new Error("Unexpected mutation");
+    };
+    await expect(ensureProjectNetwork("prj_overlap", command, "10.251.0.0/16"))
+      .rejects.toMatchObject({ code: "PROJECT_NETWORK_CAPACITY" });
+    expect(attempted.size).toBe(256);
   });
 });

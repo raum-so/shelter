@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { ExternalDomains } from "../services/external-domains.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
@@ -314,7 +315,7 @@ function initialEnvironmentRows(config: AppConfig, projectId: string, variables:
   });
 }
 
-function assertEnvironmentSize(variables: Array<{ key: string; value: string }>): void {
+export function assertEnvironmentSize(variables: Array<{ key: string; value: string }>): void {
   const total = variables.reduce((bytes, variable) => (
     bytes + Buffer.byteLength(variable.key, "utf8") + Buffer.byteLength(variable.value, "utf8") + 2
   ), 0);
@@ -340,10 +341,11 @@ export function registerProjectRoutes(
   database: Database,
   uploads: UploadService,
   cloudflare: CloudflareService,
-  github: GitHubService
+  github: GitHubService,
+  externalDomains: ExternalDomains
 ): void {
   database.recoverPendingDomains();
-  const projectDeletion = new ProjectDeletionService(config, database, cloudflare);
+  const projectDeletion = new ProjectDeletionService(config, database, cloudflare, externalDomains);
 
   app.get("/api/overview", { preHandler: requireScopedAuth("projects:read") }, async (_request, reply) => {
     reply.header("cache-control", "no-store");
@@ -832,10 +834,17 @@ export function registerProjectRoutes(
     const project = mutableProject(database, request.params.id);
     const input = z.object({
       hostname: z.string(),
+      connection: z.enum(["cloudflare", "external"]).default("cloudflare"),
       zoneId: z.string().trim().min(1).max(128).optional()
     }).strict().parse(request.body);
+    if (input.connection === "external") {
+      if (input.zoneId) throw badRequest("External domains use the configured SaaS zone", "VALIDATION");
+      reply.header("cache-control", "no-store");
+      return reply.code(202).send({ domain: externalDomains.create(project.id, input.hostname) });
+    }
     const hostname = normalizeHostname(input.hostname);
-    if (panelHostnames(database).includes(hostname)) {
+    if (hostname === cloudflare.externalDomainSettings().cnameTarget) throw conflict("This hostname is reserved", "DOMAIN_EXISTS");
+    if (database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(hostname) || panelHostnames(database).includes(hostname)) {
       return reply.code(409).send({ error: "Diese Domain ist für das Shelter-Panel reserviert", code: "PANEL_DOMAIN" });
     }
     const pending = database.createOrRetryPendingDomain({
@@ -893,6 +902,11 @@ export function registerProjectRoutes(
         "Deaktiviere Pull-Request-Previews oder wähle zuerst eine andere Preview-Domain",
         "PREVIEW_DOMAIN_IN_USE"
       );
+    }
+    const externalDomain = database.getDomain(request.params.domainId);
+    if (externalDomain?.project_id === project.id && externalDomain.connection === "external") {
+      await externalDomains.remove(externalDomain.id);
+      return { ok: true };
     }
     const claimed = database.claimDomainDeletion(request.params.id, request.params.domainId);
     if (claimed.kind === "project_unavailable") {

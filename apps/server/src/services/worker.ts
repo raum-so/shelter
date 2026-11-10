@@ -1,8 +1,9 @@
 import fs from "node:fs";
+import { SupabaseWorker } from "./supabase-worker.js";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import extractZip from "extract-zip";
+import { extractZipArchive } from "./uploads.js";
 import { parseDockerMemoryBytes, type AppConfig } from "../config.js";
 import {
   CommandCancelledError,
@@ -149,12 +150,14 @@ export class DeploymentWorker {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private activeDeploymentAbort: AbortController | null = null;
   private previewBackfillPending = true;
+  private readonly supabase: SupabaseWorker;
   private readonly projectDeletion: ProjectDeletionWorker;
   private readonly github: GitHubService;
   private readonly metrics: ServerMetricsCollector;
   private readonly projectNetworks: ProjectNetworkReconciler;
   private buildResourceLimitsSupported = false;
   private lastProjectNetworkReconcile = 0;
+  private networkCapacityWarning = "";
 
   constructor(
     private readonly config: AppConfig,
@@ -162,6 +165,7 @@ export class DeploymentWorker {
     private readonly command: WorkerCommandRunner = runCommand,
     private readonly diskStat: WorkerDiskStatProvider = async (target) => fs.promises.statfs(target, { bigint: true })
   ) {
+    this.supabase = new SupabaseWorker(config, database, command);
     this.projectDeletion = new ProjectDeletionWorker(config, database);
     this.github = new GitHubService(config, database);
     this.metrics = new ServerMetricsCollector(config, database);
@@ -173,6 +177,7 @@ export class DeploymentWorker {
     await this.reconcileProjectNetworks(true);
     await this.resetWorkspaces();
     this.projectDeletion.recoverInterrupted();
+    await this.supabase.recover();
     await this.recoverInterruptedDeployments();
     await this.cleanupInactiveRuntimeContainers();
     this.database.reconcileGithubStatusOutbox();
@@ -195,6 +200,7 @@ export class DeploymentWorker {
         await this.reconcileProjectNetworks();
         await this.reconcileCloudflaredRestart();
         if (await this.cleanupNextPullRequestPreview()) continue;
+        if (await this.supabase.processNext()) continue;
         if (await this.projectDeletion.processNext()) continue;
         if (await this.github.processNextWebhookJob()) continue;
         if (await this.github.processNextCommitStatus()) continue;
@@ -526,7 +532,12 @@ export class DeploymentWorker {
   private async reconcileProjectNetworks(force = false): Promise<void> {
     const now = Date.now();
     if (!force && now - this.lastProjectNetworkReconcile < PROJECT_NETWORK_RECONCILE_INTERVAL_MS) return;
-    await this.projectNetworks.reconcileAll();
+    const blocked = await this.projectNetworks.reconcileAll();
+    const warning = blocked.join(",");
+    if (warning !== this.networkCapacityWarning) {
+      if (blocked.length) console.warn(`PROJECT_NETWORK_CAPACITY: ${blocked.length} project(s) keep their existing networks. Configure or expand PROJECT_NETWORK_POOL.`);
+      this.networkCapacityWarning = warning;
+    }
     this.lastProjectNetworkReconcile = now;
   }
 
@@ -930,7 +941,7 @@ export class DeploymentWorker {
     if (!fs.existsSync(archivePath)) throw new Error("Quellarchiv fehlt");
     this.log(deployment.id, "system", "Entpacke geprüftes Quellarchiv.");
     await fs.promises.mkdir(sourceRoot, { recursive: true, mode: 0o700 });
-    await extractZip(archivePath, { dir: sourceRoot });
+    await extractZipArchive(archivePath, sourceRoot, Math.min(this.config.MAX_UPLOAD_MB * 5 * 1024 * 1024, 2 * 1024 * 1024 * 1024));
     this.throwIfDeploymentCancelled(deployment.id, signal);
     return findContentRoot(sourceRoot, project.root_directory);
   }

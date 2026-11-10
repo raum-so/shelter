@@ -129,7 +129,7 @@ function DomainAccessCard({ projectId, domain }: { projectId: string; domain: Do
 
         {protectedSite && (
           <div className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_14rem]">
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label htmlFor={`password-${domain.id}`}>
                 {domain.passwordConfigured
                   ? t('Set a new password', 'Neues Passwort festlegen')
@@ -156,7 +156,7 @@ function DomainAccessCard({ projectId, domain }: { projectId: string; domain: Do
                 )}
               </p>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <Label htmlFor={`ttl-${domain.id}`}>{t('Remember access for', 'Zugriff merken für')}</Label>
               <NativeSelect
                 id={`ttl-${domain.id}`}
@@ -223,9 +223,10 @@ function DomainAccessCard({ projectId, domain }: { projectId: string; domain: Do
   );
 }
 
-export function DomainAccessSettings({ projectId, domains }: { projectId: string; domains: Domain[] }) {
+export function DomainAccessSettings({ projectId, domains, compact = false }: { projectId: string; domains: Domain[]; compact?: boolean }) {
   const { t } = useI18n();
   if (domains.length === 0) return null;
+  if (compact) return <>{domains.map(domain => <DomainAccessCard key={domain.id} projectId={projectId} domain={domain} />)}</>;
   return (
     <Card>
       <CardHeader className="border-b">

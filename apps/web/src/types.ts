@@ -50,6 +50,7 @@ export type ApiTokenScope =
   | 'environment:write';
 
 export interface ApiTokenSummary {
+  projectId?: string | null;
   id: string;
   name: string;
   displayHint: string;
@@ -61,7 +62,8 @@ export interface ApiTokenSummary {
 
 export interface CreateApiTokenInput {
   name: string;
-  access: 'read' | 'write';
+  access: 'read' | 'write' | 'domains';
+  projectId?: string;
   expiresInDays: number;
   currentPassword: string;
 }
@@ -71,7 +73,29 @@ export interface CreateApiTokenResult {
   secret: string;
 }
 
+export interface ExternalDomainSettings {
+  configured: boolean;
+  zoneId: string | null;
+  cnameTarget: string | null;
+  suggestedZoneId: string | null;
+  suggestedCnameTarget: string | null;
+}
+
+export interface ExternalDomainDetails {
+  phase: 'ownership' | 'dns' | 'certificate' | 'deployment' | 'active' | 'removing' | 'error';
+  cnameTarget: string;
+  ownershipVerified: boolean;
+  dnsReady: boolean;
+  hostnameStatus: string;
+  tlsStatus: string;
+  lastCheckedAt: string | null;
+  error: string | null;
+  records: Array<{ type: 'TXT' | 'CNAME'; name: string; value: string }>;
+}
+
 export interface Domain {
+  connection?: 'cloudflare' | 'external';
+  external?: ExternalDomainDetails;
   id: string;
   hostname: string;
   status?: 'active' | 'pending' | 'error' | string;
@@ -588,6 +612,7 @@ export interface CloudflareSettings {
   accounts: CloudflareAccount[];
   oauthExpiresAt: string | null;
   reconnectRequired: boolean;
+  oauthMissingScopes?: string[];
   accountId: string | null;
   tunnelId: string | null;
   tunnelName: string | null;

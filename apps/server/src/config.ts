@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { CLOUDFLARE_REQUIRED_OAUTH_SCOPES } from "./lib/cloudflare-scopes.js";
 
 const optionalTrimmedString = z.preprocess(
   (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -56,6 +57,18 @@ const ConfigSchema = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/)
     .default("shelter/control-plane:local"),
   RUNTIME_NETWORK: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/).default("shelter-runtime"),
+  PROJECT_NETWORK_POOL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().regex(/^10\.(?:0|[1-9]\d{0,2})\.0\.0\/16$/)
+      .refine((value) => Number(value.split(".")[1]) <= 255, "Expected a private 10.x.0.0/16 network")
+      .optional(),
+  ),
+  SUPABASE_NETWORK_POOL: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.string().regex(/^10\.\d{1,3}\.0\.0\/16$/)
+      .refine((value) => Number(value.split(".")[1]) <= 255, "Expected a private 10.x.0.0/16 network")
+      .optional(),
+  ),
   TRAEFIK_SERVICE_URL: z.url().default("http://traefik:80"),
   TRUSTED_PROXY_IP: z.ipv4().default("10.253.253.3"),
   TRUSTED_CLOUDFLARED_IP: z.ipv4().default("10.253.253.4"),
@@ -75,6 +88,12 @@ const ConfigSchema = z.object({
   METRICS_RETENTION_HOURS: z.coerce.number().int().min(1).max(720).default(48),
   CHROMIUM_PATH: z.string().min(1).default("/usr/bin/chromium-browser"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  EXTERNAL_DOMAIN_DNS_SERVERS: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().max(1024).default("1.1.1.1 8.8.8.8")
+      .transform((value) => value.trim().split(/[\s,]+/))
+      .pipe(z.array(z.union([z.ipv4(), z.ipv6()])).min(1).max(4))
+  ),
   CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
   CLOUDFLARE_API_TOKEN: z.string().optional(),
   CLOUDFLARE_OAUTH_CLIENT_ID: optionalTrimmedString,
@@ -88,9 +107,20 @@ const ConfigSchema = z.object({
       .min(1)
       .max(2048)
       .regex(/^[A-Za-z0-9._:-]+(?:\s+[A-Za-z0-9._:-]+)*$/)
-      .default("account-settings.read zone.read dns.write argotunnel.write")
+      .default(CLOUDFLARE_REQUIRED_OAUTH_SCOPES.join(" "))
   )
 }).superRefine((config, context) => {
+  if (config.PROJECT_NETWORK_POOL) {
+    const prefix = config.PROJECT_NETWORK_POOL.split(".").slice(0, 2).join(".") + ".";
+    if (config.PROJECT_NETWORK_POOL === config.SUPABASE_NETWORK_POOL || config.TRUSTED_PROXY_IP.startsWith(prefix) || config.TRUSTED_CLOUDFLARED_IP.startsWith(prefix)) {
+      context.addIssue({
+        code: "custom",
+        path: ["PROJECT_NETWORK_POOL"],
+        message: "Reserve a separate project range outside Supabase and control-plane networks"
+      });
+    }
+  }
+
   if (parseDockerMemoryBytes(config.BUILD_MEMORY_SWAP) < parseDockerMemoryBytes(config.BUILD_MEMORY)) {
     context.addIssue({
       code: "custom",

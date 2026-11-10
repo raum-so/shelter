@@ -152,7 +152,7 @@ export function DeploymentLogsPanel({ deployment }: { deployment?: Deployment })
         ) : logs.isLoading ? (
           <p className="flex items-center gap-2 text-white/45"><LoaderCircle className="size-3.5 animate-spin" /> {t('Loading logs …', 'Logs werden geladen …')}</p>
         ) : logs.isError ? (
-          <div className="flex flex-col items-start gap-3 text-red-300">
+          <div className="flex flex-col items-start gap-3 text-terminal-foreground">
             <span>{logs.error instanceof Error ? logs.error.message : t('Logs could not be loaded.', 'Logs konnten nicht geladen werden.')}</span>
             <Button variant="outline" size="sm" className="border-white/15 bg-white/5 text-white hover:bg-white/10" onClick={() => logs.refetch()}>
               <RefreshCw /> {t('Load again', 'Erneut laden')}
@@ -180,7 +180,7 @@ export function DeploymentLogsPanel({ deployment }: { deployment?: Deployment })
         <span>{deployment ? `DEPLOY ${deployment.id.slice(0, 8).toUpperCase()}` : t('NO DEPLOYMENT', 'KEIN DEPLOYMENT')}</span>
         <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {streamError && active && (
-            <button className="max-w-full text-left text-amber-300 underline underline-offset-2" type="button" onClick={() => { setStreamError(false); setStreamRevision((value) => value + 1); }}>
+            <button className="max-w-full text-left text-terminal-foreground underline underline-offset-2" type="button" onClick={() => { setStreamError(false); setStreamRevision((value) => value + 1); }}>
               {t('Stream interrupted · reconnect', 'Stream unterbrochen · neu verbinden')}
             </button>
           )}

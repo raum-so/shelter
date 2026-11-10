@@ -1,3 +1,6 @@
+import { MfaSettings } from "@/components/settings/MfaSettings";
+import { SecurityEvents } from "@/components/settings/SecurityEvents";
+import { ExternalDomainSettingsCard } from "../components/ExternalDomains";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -305,6 +308,11 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
         description: t('Sign-in succeeded. Finish setting up the tunnel now.', 'Die Anmeldung war erfolgreich. Schließe jetzt die Tunnel-Einrichtung ab.'),
         id: 'cloudflare-callback',
       });
+    } else if (callbackStatus === 'permissions') {
+      const title = t('Cloudflare permissions missing', 'Cloudflare-Rechte fehlen');
+      const message = t('Allow the required permissions in your Cloudflare OAuth client, including SSL and Certificates Write. Then reconnect Cloudflare. Your current connection has been kept.', 'Erlaube die benötigten Rechte im Cloudflare-OAuth-Client, einschließlich SSL and Certificates Write. Verbinde Cloudflare danach erneut. Die bisherige Verbindung bleibt erhalten.');
+      setConnectionNotice({ tone: 'error', title, message });
+      toast.error(title, { description: message, id: 'cloudflare-callback' });
     } else {
       setConnectionNotice({
         tone: 'error',
@@ -686,7 +694,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     const organizationUpgradeInstallUrl = trustedGitHubAppInstallationUrl(github?.previewCapability?.upgradeInstallUrl);
 
     return (
-      <div className="flex flex-col gap-8 sm:gap-10">
+      <div className="flex min-w-0 flex-col gap-6">
         <SettingsHeader
           section="github"
           status={<StatusBadge status={githubSettings.isLoading ? 'pending' : connected ? 'connected' : github?.configured ? 'ready' : 'offline'} />}
@@ -974,13 +982,14 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     return (
       <>
         {unsavedChangesGuard}
-        <div className="flex flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-6">
           <SettingsHeader section="security" />
-
-          <section aria-labelledby="password-settings-title" className="w-full max-w-[40rem]">
+          <div className="grid max-w-6xl items-start gap-6 lg:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-6"><MfaSettings /><SecurityEvents /></div>
+          <section aria-labelledby="password-settings-title" className="min-w-0">
             <Card>
             <CardHeader className="border-b">
-              <CardTitle id="password-settings-title" className="text-lg">{t('Change administrator password', 'Admin-Passwort ändern')}</CardTitle>
+              <CardTitle id="password-settings-title">{t('Change administrator password', 'Admin-Passwort ändern')}</CardTitle>
               <CardDescription>
                 {t('Choose a long, unique password. All other active sessions are signed out after the change.', 'Wähle ein langes, einzigartiges Passwort. Nach der Änderung werden alle anderen aktiven Sitzungen automatisch abgemeldet.')}
               </CardDescription>
@@ -1053,6 +1062,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
             </CardContent>
             </Card>
           </section>
+          </div>
         </div>
       </>
     );
@@ -1083,7 +1093,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
   return (
     <>
       {unsavedChangesGuard}
-      <div className="flex flex-col gap-8 sm:gap-10">
+      <div className="flex min-w-0 flex-col gap-6">
         <SettingsHeader
         section="cloudflare"
         status={<StatusBadge status={oauthPending ? 'pending' : settings.data?.connected ? 'connected' : configured ? 'ready' : 'offline'} />}
@@ -1146,8 +1156,10 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                 </dl>
 
                 {settings.data?.reconnectRequired && (
-                  <InlineNotice tone="warning" title={t('Reconnect Cloudflare', 'Cloudflare erneut verbinden')}>
-                    {t('OAuth access expired or was revoked.', 'Der OAuth-Zugang ist abgelaufen oder wurde widerrufen.')}
+                  <InlineNotice tone="warning" title={settings.data.oauthMissingScopes?.length ? t('Update Cloudflare permissions', 'Cloudflare-Rechte aktualisieren') : t('Reconnect Cloudflare', 'Cloudflare erneut verbinden')}>
+                    {settings.data.oauthMissingScopes?.length
+                      ? t('The current login is missing required permissions, including certificate management for customer domains. Reconnect Cloudflare and approve the requested permissions. Your existing projects and tunnel stay in place.', 'Dem aktuellen Login fehlen benötigte Rechte, unter anderem die Zertifikatsverwaltung für Kundendomains. Verbinde Cloudflare neu und erlaube die angefragten Rechte. Deine bestehenden Projekte und der Tunnel bleiben erhalten.')
+                      : t('OAuth access expired or was revoked.', 'Der OAuth-Zugang ist abgelaufen oder wurde widerrufen.')}
                   </InlineNotice>
                 )}
 
@@ -1210,7 +1222,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
               </CardHeader>
               <CardContent className="grid gap-5">
                 <ul className="grid gap-2 text-sm text-muted-foreground" aria-label={t('Required Cloudflare permissions', 'Benötigte Cloudflare-Bereiche')}>
-                  {[t('Read accounts', 'Accounts lesen'), t('Manage tunnels', 'Tunnel verwalten'), t('Manage DNS records', 'DNS-Einträge verwalten')].map((permission) => (
+                  {[t('Read accounts', 'Accounts lesen'), t('Manage tunnels', 'Tunnel verwalten'), t('Manage DNS records', 'DNS-Einträge verwalten'), t('Manage certificates for customer domains', 'Zertifikate für Kundendomains verwalten')].map((permission) => (
                     <li className="flex items-center gap-2" key={permission}>
                       <Check className="size-4 text-foreground" aria-hidden="true" />
                       {permission}
@@ -1402,7 +1414,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
                   <Separator className="mb-5" />
                   <form className="grid gap-5" onSubmit={submitTokenFallback}>
                     <InlineNotice tone="warning" title={t('Use a minimally scoped token', 'Minimal berechtigten Token verwenden')}>
-                      {t('Open the template, keep Account Read, Zone Read, DNS Edit and Cloudflare Tunnel Edit, and restrict resources to your account and the domains Shelter should manage. Then paste the token below.', 'Öffne die Vorlage, behalte Account Read, Zone Read, DNS Edit und Cloudflare Tunnel Edit und begrenze die Ressourcen auf deinen Account und die Domains für Shelter. Füge anschließend den Token unten ein.')}
+                      {t('Open the template, keep Account Read, Zone Read, DNS Edit, Cloudflare Tunnel Edit and SSL and Certificates Edit, and restrict resources to your account and the domains Shelter should manage. Then paste the token below.', 'Öffne die Vorlage, behalte Account Read, Zone Read, DNS Edit, Cloudflare Tunnel Edit und SSL and Certificates Edit und begrenze die Ressourcen auf deinen Account und die Domains für Shelter. Füge anschließend den Token unten ein.')}
                     </InlineNotice>
                     <Button variant="outline" asChild className="w-fit"><a href={cloudflareTokenTemplateUrl(form.accountId)} target="_blank" rel="noreferrer">{t('1. Create Cloudflare token', '1. Cloudflare-Token erstellen')} <ExternalLink aria-hidden="true" /></a></Button>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1467,6 +1479,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
           )}
         </div>
 
+        {configured && <div className="xl:col-span-full"><ExternalDomainSettingsCard tunnelId={settings.data?.tunnelId} /></div>}
         {!configured && <aside className="border-t pt-6 xl:sticky xl:top-8 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6" aria-labelledby="cloudflare-help-title">
           <h2 id="cloudflare-help-title" className="text-base font-semibold">{t('How it works', 'So funktioniert es')}</h2>
           <ol className="mt-4 grid gap-4">

@@ -158,7 +158,7 @@ After each processed deployment, the worker limits only Shelter's dedicated buil
 
 ### Cloudflare and DNS
 
-- The OAuth client requests only Account Read, Zone Read, DNS Write, and Cloudflare Tunnel Write. The API-token fallback can be restricted to one account and selected zones.
+- The OAuth client requires Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write for customer-domain certificates. The API-token fallback can be restricted to one account and selected zones.
 - Shelter searches zones only under the configured account ID.
 - An existing DNS record that does not target the Shelter tunnel is not adopted or overwritten.
 - A DNS record is deleted only if it still points to Shelter's tunnel.
@@ -229,7 +229,7 @@ A complete backup of `.env`, `shelter-data`, `shelter-routing`, and `shelter-tun
 - Allow inbound SSH only. Shelter does not require public ports 80, 443, or 7080.
 - Allow outbound TCP and UDP 7844 for `cloudflared`, plus required HTTPS, DNS, Git, registry, and package destinations.
 - Restrict Docker access to the smallest possible operator group; membership in `docker` is root-equivalent.
-- Prefer a private self-managed Cloudflare OAuth client with Account Read, Cloudflare Tunnel Write, Zone Read, and DNS Write. Restrict the API-token fallback to the same account and required zones.
+- Prefer a private self-managed Cloudflare OAuth client with Account Read, Cloudflare Tunnel Write, Zone Read, DNS Write, and SSL and Certificates Write. Restrict the API-token fallback to the same account and required zones.
 - Register a stable HTTPS callback URL. Use an HTTP loopback callback only briefly through a controlled SSH forward, never over an exposed network, then update the Cloudflare client and `.env` together to the exact final HTTPS callback.
 - Manually configure Cloudflare Access with a restrictive identity or device policy for the panel domain, verify the exact hostname in Cloudflare, and only then save Shelter's hostname-bound administrator confirmation. Do not treat that confirmation as automated policy verification.
 - Deploy trusted sources only and review pull requests and dependency changes before building.
@@ -283,3 +283,124 @@ bounded PNGs; uploaded SVG, scripts, arbitrary CSS/HTML and remote asset fetchin
 are disallowed. Text is escaped in server-rendered HTML and bootstrap JSON.
 Branding does not change cookie names, authentication scopes, routing identifiers,
 Docker resources, or existing GitHub App registrations.
+
+
+## Managed Supabase
+
+Supabase instances use a pinned, curated nine-service template. Only the worker
+controls Docker. Each instance has separate backend and ingress networks;
+Traefik joins ingress only, and only the gateway joins both. Postgres binds an
+assigned host port exclusively to loopback for SSH forwarding. No Supabase
+container mounts the Docker socket, host directories, or another instance's
+volumes. Resources are labelled and ownership checked before reuse or removal.
+
+The gateway independently distinguishes the API and Studio hostnames. Studio
+and metadata routes are absent on the API host. Studio requires a high-entropy
+Basic-auth password over HTTPS; application keys cannot bypass this login.
+Gateway request logging is disabled to avoid storing credentials from request
+URLs or invalid configuration diagnostics. Auth redirects and signup settings
+are explicit; autoconfirmation is disabled. Application table RLS and grants
+remain the application author's responsibility.
+
+Secrets are encrypted in Shelter's database. Credential retrieval requires a
+browser session, CSRF validation and password reauthentication. Cold snapshots
+are encrypted and authenticated, and restore authenticates them before changing
+runtime resources. Previous volume generations are retained. This is a single
+host, not a hostile-tenant sandbox or high-availability database service. Read
+[the Supabase operations guide](docs/SUPABASE.md) before enabling public traffic.
+
+Uploaded ZIPs are revalidated entry by entry on the worker while they are streamed
+into an empty workspace. Extraction rejects links, special files, path escapes,
+entry collisions and excessive expansion; it never replaces an existing file.
+Application and database data volumes are not automatically encrypted at rest.
+Use host disk encryption when your threat model requires it.
+
+Global SMTP credentials are encrypted at rest and never returned by settings APIs.
+Changing a global server requires fresh TLS/authentication verification before an
+explicit apply operation updates its consumers. Individual Supabase SMTP overrides
+remain isolated from global changes. New SMTP settings require implicit TLS on
+port 465 with certificate verification. Connection tests send no mail; the optional
+fixed-content test message can only target the signed-in administrator's email.
+SMTP settings mutations require an administrator session and CSRF protection.
+
+Managed Supabase Studio supports a browser-bound, one-use handoff from an
+authenticated Shelter session. Studio session cookies are host-only, Secure,
+HttpOnly and SameSite=Strict, and every request revalidates the parent session,
+instance state and credential revision. Logout revokes the linked Studio
+session. Only Traefik may request the internal Basic authorization header; the
+gateway still enforces authentication and same-origin mutations. Handoff tickets
+expire after 60 seconds and are stored only as hashes. Manual password login
+remains a separate fallback with the normal Studio password-rotation lifecycle.
+
+Managed Edge Functions run in a pinned, resource-limited container on their own
+Supabase instance network. The runtime and Studio mount function files read-only;
+only the worker's short-lived deployment helper writes them. The main router is
+in a separate read-only volume and verifies HS256 signatures and token expiry
+before dispatch. Function source is trusted administrator code with that
+instance's service credentials; it must enforce application-specific access
+rules itself. Deployments require a browser session and CSRF validation. Queued
+source is encrypted and removed from the queue after completion. No function or
+deployment helper receives the Docker socket or a public host port.
+
+
+Managed Supabase function source, version history, invocation payloads and results,
+and external backup credentials are encrypted with APP_SECRET. Code and test
+routes require a Shelter browser session; mutations require CSRF. Function test
+requests use the anon key or no token, and are never automatically replayed after
+worker interruption. Candidate module validation executes administrator-provided
+code with the instance's existing service authority. External backup uploads use
+public HTTPS destinations with private-address rejection at connection time,
+bounded multipart uploads and verified S3 checksums. Recovery tests use isolated
+volume generations and do not attach their gateway to public routing.
+
+## Administrator two-factor authentication
+
+Administrators can enroll an authenticator under Settings → Security. Enrollment
+requires the current password and a valid six-digit TOTP before protection becomes
+active. Secrets are encrypted with `APP_SECRET`; ten random recovery codes are
+shown once and stored only as hashes. Each recovery code is single-use. Enabling
+or disabling the factor revokes other browser sessions and personal API tokens;
+the current confirmed session remains active. Disabling requires the password
+and a valid second factor or recovery code.
+
+Password verification alone does not create a session for an enrolled account.
+Login issues a five-minute HttpOnly, SameSite-strict challenge cookie. Challenges
+are bound to the current password hash, permit at most five verification attempts,
+and are consumed atomically. Used TOTP time steps cannot be replayed. Changing the
+password invalidates pending challenges. Keep recovery codes outside the server
+and retain `APP_SECRET` with encrypted recovery material.
+
+The administrator security history records successful sign-ins, failed password
+attempts and authenticated mutation outcomes using fixed route templates and
+bounded resource identifiers. It contains no request/response bodies, passwords,
+OTP values, session cookies, API keys or function source. The latest 10,000 events
+are retained locally; a host administrator can alter this SQLite data, so this is
+an operational audit trail rather than an external tamper-proof compliance log.
+## External customer domains
+
+External CNAME bindings require a random, binding-specific DNS TXT proof before
+Shelter creates a Cloudflare for SaaS custom hostname. CNAME, hostname activation,
+certificate activation and an active deployment are required before routing.
+DNS checks never fetch customer-controlled URLs. Public-suffix validation rejects
+apex names and IPs. A stale CNAME alone cannot verify a new binding.
+
+The configured fallback must be active and point through a proxied CNAME to this
+installation's exact tunnel. Its hostname can be the configured primary panel
+domain; sharing that DNS destination does not assign the panel hostname to a
+project or change Host-based routing. Setup validates it without replacing
+zone-wide provider settings. Only stored custom-hostname IDs with the expected hostname
+and no custom-origin drift can be deleted. Removal disables traffic first and
+persists failed cleanup for retry; it never removes customer DNS or the fallback.
+
+Project-domain API tokens are restricted to one project's domain routes. Keep
+these tokens on the application's backend. Domain selection does not establish
+customer authorization: tenant data isolation, branding, host-scoped sessions and
+approved authentication callback URLs remain application responsibilities.
+See [external-domain operations and rollback](docs/EXTERNAL-DOMAINS.md).
+
+OAuth upgrades never infer additional grants from requested scopes. Explicitly
+reduced token responses are rejected before a new connection is staged; if the
+provider omits `scope`, the OAuth requested-scope fallback applies. Existing
+credentials with missing permissions remain usable for their granted operations
+and require user reauthorization. A pending grant created before the upgrade
+is rechecked before activation.

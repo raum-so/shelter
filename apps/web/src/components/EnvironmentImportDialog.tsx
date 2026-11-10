@@ -153,7 +153,7 @@ export function EnvironmentImportDialog({
                 : exceedsTotalLimit
                   ? t('The import would create {count} variables; Shelter allows at most 200.', 'Der Import würde {count} Variablen ergeben; Shelter erlaubt höchstens 200.', { count: counts.total })
                   : (
-                    <ul className="mt-1 list-disc space-y-1 pl-4">
+                    <ul className="flex flex-col mt-1 list-disc gap-1 pl-4">
                       {parsed.errors.slice(0, 5).map((error, index) => <li key={`${error.line}-${error.code}-${index}`}>{localizedError(error, t)}</li>)}
                       {parsed.errors.length > 5 && <li>{t('{count} more errors', '{count} weitere Fehler', { count: parsed.errors.length - 5 })}</li>}
                     </ul>

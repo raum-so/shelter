@@ -1,5 +1,49 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './client';
+import { api, setCsrfToken } from './client';
+
+describe('empty mutation requests', () => {
+  afterEach(() => {
+    setCsrfToken('');
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['POST', '/api/settings/cloudflare/oauth/start', () => api.startCloudflareOAuth()],
+    ['POST', '/api/settings/cloudflare/test', () => api.testCloudflare()],
+    ['DELETE', '/api/settings/api-tokens/token-id', () => api.revokeApiToken('token-id')],
+  ] as const)('types %s %s so proxy framing cannot cause an unsupported media type', async (method, path, send) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}));
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken('csrf-test-value');
+
+    await send();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    const sent = new Request(new URL(String(url), 'https://panel.example.com'), init);
+    expect(new URL(sent.url).pathname).toBe(path);
+    expect(sent.method).toBe(method);
+    expect(sent.headers.get('content-type')).toBe('application/json');
+    expect(await sent.text()).toBe('null');
+    expect(sent.headers.get('x-csrf-token')).toBe('csrf-test-value');
+    expect(sent.credentials).toBe('include');
+  });
+});
+
+describe('Cloudflare permission errors', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ['en', 'CLOUDFLARE_OAUTH_SCOPE_MISSING', 'Reconnect Cloudflare'],
+    ['de', 'CLOUDFLARE_OAUTH_SCOPE_MISSING', 'Verbinde Cloudflare'],
+    ['en', 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED', 'Allow the connected credential'],
+    ['de', 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED', 'Erlaube dem verbundenen Zugang'],
+  ])('explains %s %s using the selected language', async (locale, code, message) => {
+    vi.stubGlobal('document', { documentElement: { lang: locale } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ code, message: 'Provider diagnostic' }, { status: 400 })));
+    await expect(api.configureExternalDomains({ zoneId: 'a'.repeat(32), cnameTarget: 'hosting.example.com' }))
+      .rejects.toMatchObject({ message: expect.stringContaining(message), status: 400 });
+  });
+});
 
 describe('GitHub repository api', () => {
   afterEach(() => {
@@ -90,7 +134,6 @@ describe('deployment api', () => {
       method: 'POST',
       credentials: 'include',
     }));
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
   });
 
   it('updates project settings and unwraps the normalized project', async () => {
@@ -170,7 +213,6 @@ describe('deployment api', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/prj%2F42/deploy', expect.objectContaining({
       method: 'POST',
-      body: undefined,
     }));
   });
 });
@@ -320,7 +362,6 @@ describe('github api', () => {
         credentials: 'include',
       }),
     );
-    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
   });
 
   it('creates a project from a GitHub App repository', async () => {
@@ -603,5 +644,40 @@ describe('server metrics api', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/server/metrics?range=6h', expect.objectContaining({
       credentials: 'include',
     }));
+  });
+});
+
+describe("Supabase backup settings API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("sends editable settings without server metadata from the loaded form", async () => {
+    const loaded = {
+      enabled: true,
+      verifyWeekly: true,
+      hourUtc: 3,
+      nextAt: "2026-10-28T03:00:00Z",
+      destination: "s3" as const,
+      s3: {
+        endpoint: "https://s3.example.com",
+        region: "eu-central-1",
+        bucket: "backups",
+        accessKeyId: "test-access",
+        hasSecret: true,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(loaded));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.supabaseSaveBackupPolicy("sb_example", loaded);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      enabled: true,
+      verifyWeekly: true,
+      hourUtc: 3,
+      destination: "s3",
+      s3: {
+        endpoint: "https://s3.example.com",
+        region: "eu-central-1",
+        bucket: "backups",
+        accessKeyId: "test-access",
+      },
+    });
   });
 });

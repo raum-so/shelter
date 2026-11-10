@@ -1,3 +1,7 @@
+import type { SupabaseReadiness, SupabaseFunctionCatalog, SupabaseFunctionDetail, SupabaseBackupPolicy } from "./supabase-types";
+import type { SupabaseConnectionInput, SupabaseConnectionCatalog, SupabaseConnection } from "./supabase-types";
+import type { SmtpState, SmtpInput, SupabaseSmtpInput } from "./smtp-types";
+import type { SupabaseInstance, SupabaseCreateInput, SupabaseCredentials } from './supabase-types';
 import { brandCopy, type Branding, type BrandingState } from '../lib/brand';
 import type {
   ControlPlaneUpdateState,
@@ -14,6 +18,7 @@ import type {
   Deployment,
   Domain,
   DomainAccessInput,
+  ExternalDomainSettings,
   EnvironmentVariable,
   GitHubBranch,
   GitHubPreviewCapability,
@@ -64,6 +69,18 @@ export function setCsrfToken(token?: string | null) {
 function extractMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
+    if (record.code === 'CLOUDFLARE_OAUTH_SCOPE_MISSING') {
+      return localize(
+        'The Cloudflare login is missing SSL and Certificates Write. Reconnect Cloudflare in Settings and approve the additional permission.',
+        'Dem Cloudflare-Login fehlt SSL and Certificates Write. Verbinde Cloudflare in den Einstellungen neu und erlaube das zusätzliche Recht.',
+      );
+    }
+    if (record.code === 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED') {
+      return localize(
+        'Cloudflare denied access to the SaaS setup. Allow the connected credential SSL and Certificates Write for this domain.',
+        'Cloudflare verweigert den Zugriff auf die SaaS-Einrichtung. Erlaube dem verbundenen Zugang SSL and Certificates Write für diese Domain.',
+      );
+    }
     if (typeof record.message === 'string') return brandCopy(record.message);
     if (typeof record.error === 'string') return brandCopy(record.error);
   }
@@ -71,18 +88,22 @@ function extractMessage(payload: unknown, fallback: string) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  // Proxies can forward empty mutations with chunked framing. A typed JSON null
+  // preserves the no-arguments contract without relying on a zero-length body.
+  const body = init.body ?? (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? 'null' : undefined);
   const headers = new Headers(init.headers);
-  const isFormData = init.body instanceof FormData;
-  if (init.body && !isFormData && !headers.has('content-type')) {
+  const isFormData = body instanceof FormData;
+  if (body && !isFormData && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const method = (init.method ?? 'GET').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers.set('x-csrf-token', csrfToken);
   }
 
   const response = await fetch(path, {
     ...init,
+    body,
     headers,
     credentials: 'include',
   });
@@ -230,6 +251,35 @@ async function uploadArchive(file: File, onProgress?: (progress: UploadProgress)
 }
 
 export const api = {
+  smtp: () => request<SmtpState>('/api/settings/smtp'),
+  saveSmtp: (input:SmtpInput) => request<SmtpState>('/api/settings/smtp',{method:'PUT',body:JSON.stringify(input)}),
+  verifySmtp: (revision:string) => request<SmtpState>('/api/settings/smtp/verify',{method:'POST',body:JSON.stringify({revision})}),
+  sendSmtpTest: (revision:string) => request<{accepted:boolean}>('/api/settings/smtp/test-email',{method:'POST',body:JSON.stringify({revision})}),
+  applySmtp: (revision:string|null) => request<{queued:string[]}>('/api/settings/smtp/apply',{method:'POST',body:JSON.stringify({revision})}),
+  selectSupabaseSmtp: (id:string,input:SupabaseSmtpInput) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/smtp`,{method:'PUT',body:JSON.stringify(input)}),
+  supabaseReadiness: () => request<SupabaseReadiness>('/api/supabase/readiness'),
+  supabaseInstances: () => request<{instances:SupabaseInstance[]}>('/api/supabase'),
+  createSupabase: (input:SupabaseCreateInput) => request<{instance:SupabaseInstance}>('/api/supabase', {method:'POST',body:JSON.stringify(input)}),
+  supabaseAction: (id:string,input:{action:string;backupId?:string;confirmation?:string}) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/actions`,{method:'POST',body:JSON.stringify(input)}),
+  supabaseCredentials: (id:string,currentPassword:string) => request<SupabaseCredentials>(`/api/supabase/${encodeURIComponent(id)}/credentials`,{method:'POST',body:JSON.stringify({currentPassword})}),
+  supabaseStudio: (id: string, state?: string) => request<{url: string}>(`/api/supabase/${encodeURIComponent(id)}/studio-session`, {method: 'POST', body: JSON.stringify({state})}),
+  supabaseFunctions: (id: string, input: {name?: string; source?: string; expectedHash?:string|null} = {}) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/functions`, {method:'POST', body:JSON.stringify(input)}),
+  supabaseInstance: (id:string) => request<{instance:SupabaseInstance}>(`/api/supabase/${encodeURIComponent(id)}`),
+  supabaseFunctionCatalog: (id:string) => request<SupabaseFunctionCatalog>(`/api/supabase/${encodeURIComponent(id)}/functions`),
+  supabaseRefreshFunctions: (id:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/functions/refresh`,{method:'POST',body:'{}'}),
+  supabaseFunction: (id:string,name:string,versionId?:string) => request<SupabaseFunctionDetail>(`/api/supabase/${encodeURIComponent(id)}/functions/${encodeURIComponent(name)}${versionId ? `?versionId=${encodeURIComponent(versionId)}` : ''}`),
+  supabaseDeleteFunction: (id:string,name:string,expectedHash:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/functions/${encodeURIComponent(name)}`,{method:'DELETE',body:JSON.stringify({expectedHash})}),
+  supabaseInvokeFunction: (id:string,name:string,input:{method:string;body?:string;query:string;auth:'anon'|'none'}) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/functions/${encodeURIComponent(name)}/invoke`,{method:'POST',body:JSON.stringify(input)}),
+  supabaseOperationResult: <T>(id:string,jobId:string) => request<{result:T|null}>(`/api/supabase/${encodeURIComponent(id)}/operations/${encodeURIComponent(jobId)}/result`),
+  supabaseCheckConnection: (id:string,projectId:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/connections/${encodeURIComponent(projectId)}/check`,{method:'POST',body:'{}'}),
+  supabaseBackupPolicy: (id:string) => request<SupabaseBackupPolicy>(`/api/supabase/${encodeURIComponent(id)}/backup-policy`),
+  supabaseSaveBackupPolicy: (id:string,input:Omit<SupabaseBackupPolicy,'nextAt'>) => request<SupabaseBackupPolicy>(`/api/supabase/${encodeURIComponent(id)}/backup-policy`,{method:'PUT',body:JSON.stringify({enabled:input.enabled,verifyWeekly:input.verifyWeekly,hourUtc:input.hourUtc,destination:input.destination,s3:input.s3 ? {endpoint:input.s3.endpoint,region:input.s3.region,bucket:input.s3.bucket,accessKeyId:input.s3.accessKeyId,...(input.s3.secretAccessKey ? {secretAccessKey:input.s3.secretAccessKey}:{})}:undefined})}),
+  supabaseCheckBackupDestination: (id:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/backup-policy/check`,{method:'POST',body:'{}'}),
+  supabaseUploadBackup: (id:string,backupId:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/upload`,{method:"POST",body:"{}"}),
+  supabaseVerifyBackup: (id:string,backupId:string) => request<{jobId:string}>(`/api/supabase/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/verify`,{method:'POST',body:'{}'}),
+  supabaseConnections: () => request<SupabaseConnectionCatalog>('/api/supabase/connections'),
+  connectSupabase: (id:string,input:SupabaseConnectionInput) => request<{connection:SupabaseConnection;redeployRequired:boolean}>(`/api/supabase/${encodeURIComponent(id)}/connections`,{method:'POST',body:JSON.stringify(input)}),
+  disconnectSupabase: (id:string,projectId:string) => request<{environmentRetained:boolean;redeployRequired:boolean}>(`/api/supabase/${encodeURIComponent(id)}/connections/${encodeURIComponent(projectId)}`,{method:'DELETE'}),
   controlPlaneUpdates: () => request<ControlPlaneUpdateState>('/api/settings/updates'),
   checkControlPlaneUpdates: () => request<ControlPlaneUpdateState>('/api/settings/updates/check', { method: 'POST' }),
   startControlPlaneUpdate: (input: { tag: string; fromVersion: string; currentPassword: string; backupConfirmed: true }) =>
@@ -247,8 +297,15 @@ export const api = {
   },
 
   login(input: { email?: string; username?: string; password: string }) {
-    return request<Session>('/api/auth/login', { method: 'POST', body: JSON.stringify(input) });
+    return request<Session | { mfaRequired: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify(input) });
   },
+
+  verifyMfa: (code: string) => request<Session>('/api/auth/mfa/challenge', { method: 'POST', body: JSON.stringify({ code }) }),
+  mfaStatus: () => request<{ enabled: boolean; recoveryCodesRemaining: number }>('/api/auth/mfa'),
+  setupMfa: (currentPassword: string) => request<{ secret: string; uri: string; qrCode: string }>('/api/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ currentPassword }) }),
+  enableMfa: (code: string) => request<{ recoveryCodes: string[] }>('/api/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+  disableMfa: (currentPassword: string, code: string) => request<{ ok: true }>('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ currentPassword, code }) }),
+  securityEvents: () => request<{ events: { event: string; resourceId: string | null; createdAt: string; status: number }[] }>('/api/auth/security-events'),
 
   logout() {
     return request<void>('/api/auth/logout', { method: 'POST' });
@@ -442,6 +499,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ deploymentId }),
     })));
+  },
+
+  async externalDomainSettings() {
+    return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains')).externalDomains;
+  },
+
+  async configureExternalDomains(input: { zoneId: string; cnameTarget: string }) {
+    return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains', {
+      method: 'PUT', body: JSON.stringify(input),
+    })).externalDomains;
+  },
+
+  async projectDomains(id: string) {
+    return (await request<{ domains: Domain[] }>(`/api/projects/${encodeURIComponent(id)}/domains`)).domains;
+  },
+
+  async addExternalDomain(id: string, hostname: string) {
+    return (await request<{ domain: Domain }>(`/api/projects/${encodeURIComponent(id)}/domains`, {
+      method: 'POST', body: JSON.stringify({ hostname, connection: 'external' }),
+    })).domain;
+  },
+
+  async verifyExternalDomain(id: string, domainId: string) {
+    return (await request<{ domain: Domain }>(`/api/projects/${encodeURIComponent(id)}/domains/${encodeURIComponent(domainId)}/verify`, {
+      method: 'POST',
+    })).domain;
   },
 
   async addDomain(id: string, hostname: string, zoneId: string) {

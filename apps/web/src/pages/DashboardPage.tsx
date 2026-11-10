@@ -155,7 +155,7 @@ function ProjectGridCard({ project }: { project: Project }) {
     ?? t('Direct upload', 'Direkt-Upload');
 
   return (
-    <Card className="group relative min-w-0 gap-0 overflow-hidden py-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md">
+    <Card className="group relative min-w-0 gap-0 overflow-hidden py-0 transition-colors hover:border-foreground/25">
       <Link
         to={projectUrl}
         className="relative block aspect-[16/9] overflow-hidden border-b bg-muted/35 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
@@ -164,7 +164,7 @@ function ProjectGridCard({ project }: { project: Project }) {
         {fileStorage ? (
           <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_top,var(--background),var(--muted))] text-muted-foreground">
             <span className="grid justify-items-center gap-2 text-xs">
-              <span className="grid size-11 place-items-center rounded-xl border bg-background shadow-sm">
+              <span className="grid size-11 place-items-center rounded-lg bg-muted">
                 <Files className="size-5" aria-hidden="true" />
               </span>
               {t('File storage', 'Dateiablage')}
@@ -306,7 +306,7 @@ export function DashboardPage() {
 
   if (fatalError) {
     return (
-      <div className="flex w-full flex-col gap-8">
+      <div className="flex min-w-0 w-full flex-col gap-6">
         <PageIntro
           title={t('Projects', 'Projekte')}
           description={t('Manage websites, deployments, and domains in one place.', 'Verwalte deine Websites, Deployments und Domains an einem Ort.')}
@@ -325,7 +325,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-8">
+    <div className="flex min-w-0 w-full flex-col gap-6">
       <PageIntro
         title={t('Projects', 'Projekte')}
         description={t('Deploy websites, connect domains, and keep track of deployments.', 'Websites bereitstellen, Domains verbinden und Deployments im Blick behalten.')}

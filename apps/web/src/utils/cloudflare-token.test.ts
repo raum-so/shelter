@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cloudflareTokenTemplateUrl } from './cloudflare-token';
 
 describe('Cloudflare token template', () => {
-  it('includes precisely the four Shelter permissions and restricts a known account', () => {
+  it('includes the required Shelter permissions including customer certificates and restricts a known account', () => {
     const url = new URL(cloudflareTokenTemplateUrl('a'.repeat(32)));
     expect(url.origin).toBe('https://dash.cloudflare.com');
     expect(url.pathname).toBe('/profile/api-tokens');
@@ -12,6 +12,7 @@ describe('Cloudflare token template', () => {
       { key: 'zone', type: 'read' },
       { key: 'dns', type: 'edit' },
       { key: 'argotunnel', type: 'edit' },
+      { key: 'ssl_and_certificates', type: 'edit' },
     ]);
   });
   it('never includes arbitrary account input or credentials in the external URL', () => {

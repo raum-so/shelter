@@ -37,8 +37,8 @@ describe('Shelter browser metadata', () => {
       name: BRAND_NAME,
       short_name: BRAND_NAME,
       description: BRAND_CLAIM,
-      background_color: '#f5f7fc',
-      theme_color: '#173f2d',
+      background_color: '#ffffff',
+      theme_color: '#202020',
       icons: [
         {
           src: '/brand/shelter-icon-192.png',

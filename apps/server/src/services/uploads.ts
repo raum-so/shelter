@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import yauzl from "yauzl";
@@ -333,6 +335,20 @@ export function registerUploadRoutes(app: FastifyInstance, service: UploadServic
 }
 
 export function validateZipArchive(archivePath: string, maximumUncompressedBytes: number): Promise<void> {
+  return visitZipArchive(archivePath, maximumUncompressedBytes);
+}
+
+export async function extractZipArchive(archivePath: string, destination: string, maximumUncompressedBytes: number): Promise<void> {
+  const target = await fs.promises.lstat(destination);
+  if (!target.isDirectory() || target.isSymbolicLink()) throw badRequest("ZIP-Ziel muss ein Verzeichnis sein", "ZIP_UNSAFE_TARGET");
+  const root = await fs.promises.realpath(destination);
+  if ((await fs.promises.readdir(root)).length !== 0) throw badRequest("ZIP-Ziel muss leer sein", "ZIP_UNSAFE_TARGET");
+  return visitZipArchive(archivePath, maximumUncompressedBytes, root);
+}
+
+// Validation and extraction share one entry walk. No entry may create links,
+// replace an existing file, or write outside the fresh destination directory.
+function visitZipArchive(archivePath: string, maximumUncompressedBytes: number, destination?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     yauzl.open(archivePath, { lazyEntries: true, autoClose: true }, (openError, zip) => {
       if (openError || !zip) {
@@ -341,6 +357,7 @@ export function validateZipArchive(archivePath: string, maximumUncompressedBytes
       }
       let entries = 0;
       let totalUncompressed = 0;
+      let copiedBytes = 0;
       let settled = false;
       const fail = (error: Error): void => {
         if (settled) return;
@@ -359,13 +376,30 @@ export function validateZipArchive(archivePath: string, maximumUncompressedBytes
         if (normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized) || segments.includes("..")) {
           return fail(badRequest("ZIP enthält einen unsicheren Dateipfad", "ZIP_UNSAFE_PATH"));
         }
-        if (mode === 0o120000 || mode === 0o020000 || mode === 0o060000) {
+        if (mode !== 0 && mode !== 0o100000 && mode !== 0o040000) {
           return fail(badRequest("ZIP enthält Links oder Gerätedateien", "ZIP_UNSAFE_ENTRY"));
         }
         if (entry.compressedSize > 0 && entry.uncompressedSize / entry.compressedSize > 1000) {
           return fail(badRequest("ZIP enthält eine verdächtig stark komprimierte Datei", "ZIP_BOMB"));
         }
-        zip.readEntry();
+        if (!destination) { zip.readEntry(); return; }
+        const extract = async () => {
+          const output = resolveWithin(destination, normalized);
+          if (normalized.endsWith("/")) {
+            await fs.promises.mkdir(output, {recursive:true,mode:0o755});
+            return;
+          }
+          await fs.promises.mkdir(path.dirname(output), {recursive:true,mode:0o755});
+          const input = await new Promise<Readable>((resolveStream,rejectStream) => zip.openReadStream(entry,(error,stream) => error || !stream ? rejectStream(error ?? new Error("ZIP stream unavailable")) : resolveStream(stream)));
+          const limit = new Transform({transform(chunk:Buffer,_encoding,callback) {
+            copiedBytes += chunk.length;
+            callback(copiedBytes > maximumUncompressedBytes ? badRequest("ZIP ist entpackt zu groß", "ZIP_BOMB") : null, chunk);
+          }});
+          // Preserve ordinary executable bits, never setuid, setgid, or writable-by-others.
+          const permissions = (((entry.externalFileAttributes >>> 16) & 0o755) || 0o644) | 0o600;
+          await pipeline(input,limit,fs.createWriteStream(output,{flags:"wx",mode:permissions}));
+        };
+        void extract().then(() => { if (!settled) zip.readEntry(); }).catch(fail);
       });
       zip.once("end", () => {
         if (!settled) {

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { ExternalDomains } from "./external-domains.js";
 import path from "node:path";
 import type { AppConfig } from "../config.js";
 import type { CommandOptions, CommandResult } from "../lib/command.js";
@@ -35,7 +36,8 @@ export class ProjectDeletionService {
   constructor(
     private readonly config: AppConfig,
     private readonly database: Database,
-    private readonly cloudflare: CloudflareDnsDeletion
+    private readonly cloudflare: CloudflareDnsDeletion,
+    private readonly externalDomains?: Pick<ExternalDomains, "remove">
   ) {
     this.database.recoverPreparingProjectDeletions();
   }
@@ -72,7 +74,12 @@ export class ProjectDeletionService {
       for (const domain of this.database.listDomains(projectId)) {
         // CloudflareService verifies that the record still targets this Shelter
         // tunnel. A drifted/foreign record is deliberately left untouched.
-        await this.cloudflare.deleteDnsRecord(domain.zone_id, domain.dns_record_id, domain.hostname);
+        if (domain.connection === "external") {
+          if (!this.externalDomains) throw new Error("External domain cleanup is unavailable");
+          await this.externalDomains.remove(domain.id);
+        } else {
+          await this.cloudflare.deleteDnsRecord(domain.zone_id, domain.dns_record_id, domain.hostname);
+        }
         this.database.deleteDomain(domain.id);
       }
       reconcileRouting(this.config, this.database);

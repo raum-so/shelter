@@ -224,3 +224,18 @@ The CLI has no runtime dependencies and uses the Fetch API included with Node.js
 ## License
 
 [AGPL-3.0-only](https://github.com/raum-so/shelter/blob/main/LICENSE)
+
+
+### Managed Supabase
+
+Use `shelter supabase-list --json` and `shelter supabase-instance INSTANCE_ID --json`
+to inspect managed services. `supabase-create --input -`,
+`supabase-action INSTANCE_ID --input -`, and
+`supabase-connect INSTANCE_ID --input -` accept the server's JSON bodies.
+Creation requires `projects:write` and `domains:write`; actions require
+`deployments:write`; connecting requires `environment:write` and `projects:write`.
+Feed sensitive JSON through stdin or a protected file. The CLI cannot retrieve
+administrative credentials: use the password-confirmed browser flow.
+
+See [Supabase operations](../../../docs/SUPABASE.md) for direct Postgres SSH
+forwarding, Supabase CLI limitations, and backup recovery.

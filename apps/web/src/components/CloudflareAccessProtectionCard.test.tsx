@@ -50,7 +50,7 @@ describe('CloudflareAccessProtectionCard', () => {
     expect(html).toContain('hosting.example.com');
     expect(html).toContain('Self-hosted Access application for exactly hosting.example.com');
     expect(html).toContain('Shelter does not inspect your Access application or policies automatically');
-    expect(html).toContain(`href="https://dash.cloudflare.com/${'a'.repeat(32)}/one/access/apps"`);
+    expect(html).toContain(`href="https://dash.cloudflare.com/${'a'.repeat(32)}/one/access-controls/apps"`);
     expect(html).toContain('I configured these protections');
   });
 
@@ -94,8 +94,8 @@ describe('CloudflareAccessProtectionCard', () => {
   });
 
   it('only builds account-specific links from valid Cloudflare account IDs', () => {
-    expect(cloudflareAccessApplicationsUrl('not/an/account')).toBe('https://dash.cloudflare.com/?to=/:account/one/access/apps');
-    expect(cloudflareAccessApplicationsUrl('B'.repeat(32))).toBe(`https://dash.cloudflare.com/${'B'.repeat(32)}/one/access/apps`);
+    expect(cloudflareAccessApplicationsUrl('not/an/account')).toBe('https://one.dash.cloudflare.com/');
+    expect(cloudflareAccessApplicationsUrl('B'.repeat(32))).toBe(`https://dash.cloudflare.com/${'B'.repeat(32)}/one/access-controls/apps`);
   });
 });
 
