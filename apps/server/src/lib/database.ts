@@ -59,6 +59,35 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_mfa (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  encrypted_secret TEXT NOT NULL,
+  last_counter INTEGER NOT NULL DEFAULT -1,
+  recovery_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mfa_enrollments (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  encrypted_secret TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  password_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS security_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  event TEXT NOT NULL,
+  resource_id TEXT,
+  created_at TEXT NOT NULL,
+  status INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events(created_at);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

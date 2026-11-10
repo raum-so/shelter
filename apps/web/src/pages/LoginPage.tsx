@@ -5,7 +5,7 @@ import { ArrowRight, CircleAlert, ShieldCheck } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { api, setCsrfToken } from '../api/client';
+import { api, ApiError, setCsrfToken } from '../api/client';
 import { Brand } from '../components/Brand';
 import { Button, Field } from '../components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -22,14 +22,17 @@ export function LoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [code, setCode] = useState('');
 
   useEffect(() => {
     document.title = `${t('Sign in', 'Anmelden')} · ${BRAND_NAME}`;
   }, [t]);
 
   const login = useMutation({
-    mutationFn: () => api.login({ email: email.trim(), password }),
+    mutationFn: () => mfaRequired ? api.verifyMfa(code.trim().toLowerCase().replace(/\s/g, "")) : api.login({ email: email.trim(), password }),
     onSuccess: async (session) => {
+      if ("mfaRequired" in session) { setMfaRequired(true); setPassword(""); return; }
       if (session?.user) {
         setCsrfToken(session.csrfToken);
         queryClient.setQueryData<Session>(['session'], session);
@@ -41,9 +44,17 @@ export function LoginPage() {
     },
   });
 
+  function loginErrorMessage(error: unknown) {
+    const details = error instanceof ApiError ? error.details : null;
+    const code = details && typeof details === "object" && "code" in details ? details.code : null;
+    if (code === "MFA_INVALID") return t("The code is invalid or expired. Use a new authenticator code, a recovery code, or start sign-in again.", "Der Code ist ungültig oder abgelaufen. Verwende einen neuen Authenticator-Code, einen Wiederherstellungscode oder starte die Anmeldung neu.");
+    if (code === "INVALID_CREDENTIALS") return t("Email or password is incorrect.", "E-Mail-Adresse oder Passwort ist falsch.");
+    return t("Sign-in could not be completed. Check your details and try again shortly.", "Die Anmeldung konnte nicht abgeschlossen werden. Prüfe deine Angaben und versuche es in Kürze erneut.");
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!email.trim() || !password) return;
+    if (mfaRequired ? !code.trim() : !email.trim() || !password) return;
     login.mutate();
   }
 
@@ -61,16 +72,16 @@ export function LoginPage() {
         <Card>
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-semibold tracking-tight">
-              <h1 id="login-title">{t('Sign in', 'Anmelden')}</h1>
+              <h1 id="login-title">{mfaRequired ? t("Verify it’s you", "Anmeldung bestätigen") : t('Sign in', 'Anmelden')}</h1>
             </CardTitle>
             <CardDescription>
-              {profile.loginMessage || t('Sign in with your Shelter administrator account.', 'Melde dich mit deinem Shelter-Admin-Konto an.')}
+              {mfaRequired ? t('Enter the code from your authenticator app or use a recovery code.', 'Gib den Code aus deiner Authenticator-App oder einen Wiederherstellungscode ein.') : profile.loginMessage || t('Sign in with your Shelter administrator account.', 'Melde dich mit deinem Shelter-Admin-Konto an.')}
             </CardDescription>
           </CardHeader>
 
           <CardContent>
             <form className="grid gap-5" onSubmit={submit}>
-              <div className="grid gap-4">
+              {mfaRequired ? <Field label={t("Verification code", "Bestätigungscode")} name="code" value={code} onChange={event => { setCode(event.target.value); login.reset(); }} autoComplete="one-time-code" autoFocus maxLength={24} disabled={login.isPending} required /> : <div className="grid gap-4">
                 <Field
                   label={t('Email address', 'E-Mail-Adresse')}
                   name="email"
@@ -100,17 +111,14 @@ export function LoginPage() {
                   disabled={login.isPending}
                   required
                 />
-              </div>
+              </div>}
 
               {login.isError && (
                 <Alert variant="destructive">
                   <CircleAlert aria-hidden="true" />
                   <AlertTitle>{t('Sign-in failed', 'Anmeldung fehlgeschlagen')}</AlertTitle>
                   <AlertDescription>
-                    {login.error instanceof Error ? login.error.message : t(
-                      'The email address or password could not be verified.',
-                      'E-Mail-Adresse oder Passwort konnten nicht bestätigt werden.',
-                    )}
+                    {loginErrorMessage(login.error)}
                   </AlertDescription>
                 </Alert>
               )}
@@ -120,11 +128,12 @@ export function LoginPage() {
                 size="lg"
                 className="h-11 w-full"
                 loading={login.isPending}
-                disabled={!email.trim() || !password}
+                disabled={mfaRequired ? !code.trim() : !email.trim() || !password}
               >
-                {login.isPending ? t('Signing in …', 'Anmeldung läuft …') : t('Sign in', 'Anmelden')}
+                {login.isPending ? t('Signing in …', 'Anmeldung läuft …') : mfaRequired ? t('Verify and sign in', 'Bestätigen und anmelden') : t('Sign in', 'Anmelden')}
                 {!login.isPending && <ArrowRight aria-hidden="true" />}
               </Button>
+              {mfaRequired && <Button type="button" variant="ghost" disabled={login.isPending} onClick={() => { setMfaRequired(false); setCode(""); login.reset(); }}>{t("Back to sign-in", "Zurück zur Anmeldung")}</Button>}
             </form>
 
             <p className="mt-6 flex items-center justify-center gap-2 border-t pt-5 text-center text-xs text-muted-foreground">

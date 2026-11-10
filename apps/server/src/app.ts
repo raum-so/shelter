@@ -1,3 +1,4 @@
+import { installSecurityAudit } from "./services/security-audit.js";
 import fs from "node:fs";
 import { ExternalDomains } from "./services/external-domains.js";
 import { registerExternalDomainRoutes } from "./routes/external-domains.js";
@@ -104,6 +105,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
   });
 
   installAuthHook(app, database);
+  installSecurityAudit(app, database);
   registerUpdateRoutes(app, config, database);
   const uploads = new UploadService(config, database);
   const cloudflare = new CloudflareService(config, database);

@@ -284,6 +284,29 @@ are disallowed. Text is escaped in server-rendered HTML and bootstrap JSON.
 Branding does not change cookie names, authentication scopes, routing identifiers,
 Docker resources, or existing GitHub App registrations.
 
+### Administrator two-factor authentication
+
+Administrators can enroll an authenticator under Settings → Security. Enrollment
+requires the current password and a valid six-digit TOTP before protection becomes
+active. Secrets are encrypted with `APP_SECRET`; ten random recovery codes are
+shown once and stored only as hashes. Each recovery code is single-use. Enabling
+or disabling the factor revokes other browser sessions and personal API tokens;
+the current confirmed session remains active. Disabling requires the password
+and a valid second factor or recovery code.
+
+Password verification alone does not create a session for an enrolled account.
+Login issues a five-minute HttpOnly, SameSite-strict challenge cookie. Challenges
+are bound to the current password hash, permit at most five verification attempts,
+and are consumed atomically. Used TOTP time steps cannot be replayed. Changing the
+password invalidates pending challenges. Keep recovery codes outside the server
+and retain `APP_SECRET` with encrypted recovery material.
+
+The administrator security history records successful sign-ins, failed password
+attempts and authenticated mutation outcomes using fixed route templates and
+bounded resource identifiers. It contains no request/response bodies, passwords,
+OTP values, session cookies, API keys or function source. The latest 10,000 events
+are retained locally; a host administrator can alter this SQLite data, so this is
+an operational audit trail rather than an external tamper-proof compliance log.
 ### External customer domains
 
 External CNAME bindings require a random, binding-specific DNS TXT proof before

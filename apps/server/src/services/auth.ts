@@ -1,3 +1,6 @@
+import QRCode from "qrcode";
+import { MfaService } from "./mfa.js";
+import { recordSecurityEvent } from "./security-audit.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
@@ -188,42 +191,24 @@ export function sessionAuthentication(request: FastifyRequest): SessionAuthentic
   return request.auth;
 }
 
+async function verifyLoginOrigin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.headers.origin) return;
+  try {
+    const origin = new URL(request.headers.origin);
+    if (origin.host === request.headers.host && ["http:", "https:"].includes(origin.protocol) && !origin.username && !origin.password) return;
+  } catch { /* Opaque and malformed origins must not create browser login state. */ }
+  await reply.code(403).send({ code: "ORIGIN", error: "Origin stimmt nicht überein" });
+}
+
 export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, database: Database): void {
-  app.get("/api/auth/session", async (request) => {
-    if (request.auth?.kind !== "session") return { user: null, csrfToken: null };
-    const csrfToken = request.auth.csrfToken ?? randomToken();
-    if (!request.auth.csrfToken) {
-      database.sqlite.prepare("UPDATE sessions SET csrf_hash = ?, csrf_token = ? WHERE token_hash = ?").run(
-        hashToken(csrfToken), csrfToken, request.auth.sessionTokenHash
-      );
-    }
-    return {
-      user: { id: request.auth.user.id, email: request.auth.user.email },
-      csrfToken
-    };
-  });
-
-  app.post<{ Body: unknown }>("/api/auth/login", {
-    config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
-  }, async (request, reply) => {
-    const input = z.object({
-      email: z.string().nullish(),
-      username: z.string().nullish(),
-      password: z.string().nullish()
-    }).parse(request.body ?? {});
-    const email = (input.email ?? input.username)?.trim().toLowerCase() ?? "";
-    const password = input.password ?? "";
-    const user = database.findUserByEmail(email);
-    const valid = user ? await verifyPassword(password, user.password_hash) : false;
-    if (!user || !valid) {
-      await reply.code(401).send({ error: "E-Mail oder Passwort ist falsch", code: "INVALID_CREDENTIALS" });
-      return;
-    }
-
+  const mfa = new MfaService(config, database);
+  const finishLogin = async (request: FastifyRequest, reply: FastifyReply, user: NonNullable<ReturnType<Database["findUserById"]>>, mfaVerified = false) => {
     const sessionToken = randomToken();
     const csrfToken = randomToken();
     const now = new Date();
-    const created = database.createSessionIfPasswordCurrent({
+    const created = database.sqlite.transaction(() => {
+      if (mfa.status(user.id).enabled && !mfaVerified) return false;
+      return database.createSessionIfPasswordCurrent({
       token_hash: hashToken(sessionToken),
       user_id: user.id,
       csrf_hash: hashToken(csrfToken),
@@ -231,6 +216,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, data
       expires_at: new Date(now.getTime() + config.SESSION_TTL_HOURS * 60 * 60 * 1000).toISOString(),
       created_at: now.toISOString()
     }, user.password_hash);
+    }).immediate();
     if (!created) {
       return reply.code(401).send({ error: "E-Mail oder Passwort ist falsch", code: "INVALID_CREDENTIALS" });
     }
@@ -248,7 +234,93 @@ export function registerAuthRoutes(app: FastifyInstance, config: AppConfig, data
       maxAge: config.SESSION_TTL_HOURS * 60 * 60
     });
     reply.clearCookie(LEGACY_SESSION_COOKIE, { path: "/" });
+    recordSecurityEvent(database, user.id, "auth.login");
     return { user: { id: user.id, email: user.email }, csrfToken };
+  };
+
+  app.get("/api/auth/session", async (request) => {
+    if (request.auth?.kind !== "session") return { user: null, csrfToken: null };
+    const csrfToken = request.auth.csrfToken ?? randomToken();
+    if (!request.auth.csrfToken) {
+      database.sqlite.prepare("UPDATE sessions SET csrf_hash = ?, csrf_token = ? WHERE token_hash = ?").run(
+        hashToken(csrfToken), csrfToken, request.auth.sessionTokenHash
+      );
+    }
+    return {
+      user: { id: request.auth.user.id, email: request.auth.user.email },
+      csrfToken
+    };
+  });
+
+  app.post<{ Body: unknown }>("/api/auth/login", {
+    preHandler: verifyLoginOrigin,
+    config: { rateLimit: { max: 5, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
+    const input = z.object({
+      email: z.string().max(320).nullish(),
+      username: z.string().max(320).nullish(),
+      password: z.string().max(1024).nullish()
+    }).parse(request.body ?? {});
+    const email = (input.email ?? input.username)?.trim().toLowerCase() ?? "";
+    const password = input.password ?? "";
+    const user = database.findUserByEmail(email);
+    const valid = user ? await verifyPassword(password, user.password_hash) : false;
+    if (!user || !valid) {
+      recordSecurityEvent(database, user?.id ?? null, "auth.login.failed", null, 401);
+      await reply.code(401).send({ error: "E-Mail oder Passwort ist falsch", code: "INVALID_CREDENTIALS" });
+      return;
+    }
+
+    reply.header("cache-control", "no-store");
+    if (mfa.status(user.id).enabled) {
+      const challenge = mfa.challenge(user.id, user.password_hash);
+      reply.setCookie("shelter_mfa", challenge, { path: "/api/auth", httpOnly: true, secure: request.protocol === "https" || config.NODE_ENV === "production", sameSite: "strict", maxAge: 300 });
+      return { mfaRequired: true };
+    }
+    return finishLogin(request, reply, user);
+  });
+
+  app.post("/api/auth/mfa/challenge", { preHandler: verifyLoginOrigin, config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const { code } = z.object({ code: z.string().min(6).max(20) }).parse(request.body);
+    const token = uniqueCookie(request, "shelter_mfa");
+    const user = token && /^[a-f0-9]{64}$/.test(token) ? mfa.verifyChallenge(token, code) : null;
+    if (!user) return reply.code(401).send({ code: "MFA_INVALID", error: "Verification code is invalid or expired" });
+    reply.clearCookie("shelter_mfa", { path: "/api/auth" });
+    return finishLogin(request, reply, user, true);
+  });
+  app.get("/api/auth/mfa", { preHandler: requireSessionAuth }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    return mfa.status(sessionAuthentication(request).user.id);
+  });
+  const sensitive = { preHandler: requireSessionMutationAuth, config: { rateLimit: { max: 5, timeWindow: "1 minute" } } };
+  app.post("/api/auth/mfa/setup", sensitive, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const { currentPassword } = z.object({ currentPassword: z.string().min(1).max(1024) }).parse(request.body);
+    const { user } = sessionAuthentication(request);
+    if (!await verifyPassword(currentPassword, user.password_hash)) throw badRequest("Current password is incorrect", "CURRENT_PASSWORD_INVALID");
+    const setup = mfa.setup(user.id, user.email, user.password_hash);
+    return { ...setup, qrCode: await QRCode.toDataURL(setup.uri, { width: 224, margin: 2 }) };
+  });
+  app.post("/api/auth/mfa/enable", sensitive, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const { code } = z.object({ code: z.string().regex(/^\d{6}$/) }).parse(request.body);
+    const auth = sessionAuthentication(request);
+    const result = mfa.enable(auth.user.id, auth.user.password_hash, code, auth.sessionTokenHash);
+    if (!result) throw badRequest("Verification code is invalid or setup expired", "MFA_INVALID");
+    return result;
+  });
+  app.post("/api/auth/mfa/disable", sensitive, async (request, reply) => {
+    reply.header("cache-control", "no-store");
+    const { currentPassword, code } = z.object({ currentPassword: z.string().min(1).max(1024), code: z.string().min(6).max(20) }).parse(request.body);
+    const auth = sessionAuthentication(request);
+    if (!await verifyPassword(currentPassword, auth.user.password_hash)) throw badRequest("Current password is incorrect", "CURRENT_PASSWORD_INVALID");
+    if (!mfa.disable(auth.user.id, code, auth.sessionTokenHash, auth.user.password_hash)) throw badRequest("Verification code is invalid", "MFA_INVALID");
+    return { ok: true };
+  });
+  app.get("/api/auth/security-events", { preHandler: requireSessionAuth }, async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    return { events: database.sqlite.prepare("SELECT event,resource_id AS resourceId,created_at AS createdAt,status FROM security_events ORDER BY created_at DESC,id DESC LIMIT 50").all() };
   });
 
   app.post("/api/auth/logout", { preHandler: requireSessionMutationAuth }, async (request, reply) => {

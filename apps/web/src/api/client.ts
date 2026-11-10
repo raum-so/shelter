@@ -264,8 +264,15 @@ export const api = {
   },
 
   login(input: { email?: string; username?: string; password: string }) {
-    return request<Session>('/api/auth/login', { method: 'POST', body: JSON.stringify(input) });
+    return request<Session | { mfaRequired: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify(input) });
   },
+
+  verifyMfa: (code: string) => request<Session>('/api/auth/mfa/challenge', { method: 'POST', body: JSON.stringify({ code }) }),
+  mfaStatus: () => request<{ enabled: boolean; recoveryCodesRemaining: number }>('/api/auth/mfa'),
+  setupMfa: (currentPassword: string) => request<{ secret: string; uri: string; qrCode: string }>('/api/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ currentPassword }) }),
+  enableMfa: (code: string) => request<{ recoveryCodes: string[] }>('/api/auth/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+  disableMfa: (currentPassword: string, code: string) => request<{ ok: true }>('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ currentPassword, code }) }),
+  securityEvents: () => request<{ events: { event: string; resourceId: string | null; createdAt: string; status: number }[] }>('/api/auth/security-events'),
 
   logout() {
     return request<void>('/api/auth/logout', { method: 'POST' });

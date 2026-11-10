@@ -1,3 +1,5 @@
+import { MfaSettings } from "@/components/settings/MfaSettings";
+import { SecurityEvents } from "@/components/settings/SecurityEvents";
 import { ExternalDomainSettingsCard } from "../components/ExternalDomains";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -980,13 +982,14 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     return (
       <>
         {unsavedChangesGuard}
-        <div className="flex flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-6">
           <SettingsHeader section="security" />
-
-          <section aria-labelledby="password-settings-title" className="w-full max-w-[40rem]">
+          <div className="grid max-w-6xl items-start gap-6 lg:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-6"><MfaSettings /><SecurityEvents /></div>
+          <section aria-labelledby="password-settings-title" className="min-w-0">
             <Card>
             <CardHeader className="border-b">
-              <CardTitle id="password-settings-title" className="text-lg">{t('Change administrator password', 'Admin-Passwort ändern')}</CardTitle>
+              <CardTitle id="password-settings-title">{t('Change administrator password', 'Admin-Passwort ändern')}</CardTitle>
               <CardDescription>
                 {t('Choose a long, unique password. All other active sessions are signed out after the change.', 'Wähle ein langes, einzigartiges Passwort. Nach der Änderung werden alle anderen aktiven Sitzungen automatisch abgemeldet.')}
               </CardDescription>
@@ -1059,6 +1062,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
             </CardContent>
             </Card>
           </section>
+          </div>
         </div>
       </>
     );
