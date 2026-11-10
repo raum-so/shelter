@@ -35,6 +35,9 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
+    "@ts-morph/common": {
+      "minimatch": "11.0.5"
+    },
     "monaco-editor": {
       "dompurify": "3.4.17"
     }
