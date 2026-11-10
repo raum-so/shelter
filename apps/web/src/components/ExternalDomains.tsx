@@ -187,7 +187,23 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const detail = domain.external!;
-  const verify = useMutation({ mutationFn: () => api.verifyExternalDomain(projectId, domain.id), onSettled: () => {
+  const verify = useMutation({ mutationFn: () => api.verifyExternalDomain(projectId, domain.id), onSuccess: updated => {
+    queryClient.setQueryData<Domain[]>(['project-domains', projectId], current => current?.map(item => item.id === updated.id ? updated : item));
+    if (updated.status === 'active') {
+      toast.success(t('Customer domain connected', 'Kundendomain verbunden'));
+    } else if (updated.status === 'error') {
+      toast.error(t('The domain check needs attention', 'Die Domainprüfung benötigt Aufmerksamkeit'), { description: updated.external?.error ?? updated.error ?? undefined });
+    } else {
+      const waiting = updated.external?.phase === 'ownership'
+        ? t('The TXT proof is not visible through public DNS yet. Check the record and allow time for DNS caches to update.', 'Der TXT-Nachweis ist über öffentliche DNS-Server noch nicht sichtbar. Prüfe den Eintrag und warte, bis sich die DNS-Caches aktualisiert haben.')
+        : updated.external?.phase === 'dns'
+          ? t('The expected CNAME is not visible through public DNS yet.', 'Der erwartete CNAME ist über öffentliche DNS-Server noch nicht sichtbar.')
+          : updated.external?.phase === 'certificate'
+            ? t('DNS is verified. Cloudflare is still preparing the HTTPS certificate.', 'DNS ist bestätigt. Cloudflare bereitet noch das HTTPS-Zertifikat vor.')
+            : t('Domain and HTTPS are ready. The project needs an active deployment.', 'Domain und HTTPS sind bereit. Das Projekt benötigt ein aktives Deployment.');
+      toast.info(t('Check completed', 'Prüfung abgeschlossen'), { description: waiting });
+    }
+  }, onSettled: () => {
     void queryClient.invalidateQueries({ queryKey: ['project-domains', projectId] });
     void queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   } });

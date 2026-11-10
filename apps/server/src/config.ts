@@ -88,6 +88,12 @@ const ConfigSchema = z.object({
   METRICS_RETENTION_HOURS: z.coerce.number().int().min(1).max(720).default(48),
   CHROMIUM_PATH: z.string().min(1).default("/usr/bin/chromium-browser"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  EXTERNAL_DOMAIN_DNS_SERVERS: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().max(1024).default("1.1.1.1 8.8.8.8")
+      .transform((value) => value.trim().split(/[\s,]+/))
+      .pipe(z.array(z.union([z.ipv4(), z.ipv6()])).min(1).max(4))
+  ),
   CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
   CLOUDFLARE_API_TOKEN: z.string().optional(),
   CLOUDFLARE_OAUTH_CLIENT_ID: optionalTrimmedString,

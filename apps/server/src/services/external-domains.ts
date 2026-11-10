@@ -47,7 +47,10 @@ export class ExternalDomains {
   private running: Promise<unknown> | null = null;
   private readonly dns = new Resolver({ timeout: 3_000, tries: 1 });
 
-  constructor(private readonly config: AppConfig, private readonly database: Database, private readonly cloudflare: CloudflareService) {}
+  constructor(private readonly config: AppConfig, private readonly database: Database, private readonly cloudflare: CloudflareService) {
+    // Verify public records independently of host/VPN DNS and its negative cache.
+    this.dns.setServers(config.EXTERNAL_DOMAIN_DNS_SERVERS);
+  }
 
   private row(id: string): ExternalRow | undefined {
     return this.database.sqlite.prepare("SELECT * FROM external_domains WHERE domain_id = ?").get(id) as ExternalRow | undefined;

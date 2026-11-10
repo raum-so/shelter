@@ -16,11 +16,11 @@ const cleanups: Array<() => Promise<void> | void> = [];
 const zoneId = "a".repeat(32);
 const target = "connect.provider.example";
 
-async function fixture() {
+async function fixture(environment: NodeJS.ProcessEnv = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "shelter-external-"));
   const config = loadConfig({ NODE_ENV: "test", DATA_DIR: directory, WEB_DIST: path.join(directory, "web"),
     APP_SECRET: "x".repeat(64), ADMIN_EMAIL: "admin@example.com", ADMIN_PASSWORD: "test admin password",
-    CLOUDFLARE_ACCOUNT_ID: "b".repeat(32), CLOUDFLARE_API_TOKEN: "test-provider-token", LOG_LEVEL: "silent" });
+    CLOUDFLARE_ACCOUNT_ID: "b".repeat(32), CLOUDFLARE_API_TOKEN: "test-provider-token", LOG_LEVEL: "silent", ...environment });
   const database = new Database(config);
   database.setSetting("cloudflare.tunnel_id", "owned-tunnel");
   database.setSetting("cloudflare.saas_zone_id", zoneId);
@@ -98,6 +98,26 @@ afterEach(async () => {
 });
 
 describe("external customer domain lifecycle", () => {
+  it("uses the dedicated verification resolver when host DNS still has a negative cache entry", async () => {
+    const f = await fixture({ EXTERNAL_DOMAIN_DNS_SERVERS: "192.0.2.53" });
+    f.makeProject("app");
+    const domain = f.service.create("app", "portal.customer.example");
+    f.prove(domain);
+    vi.mocked(Resolver.prototype.resolveTxt).mockImplementation(async function (this: Resolver, name: string) {
+      return this.getServers().includes("192.0.2.53") && f.dnsTxt.has(name) ? [[f.dnsTxt.get(name)!]] : [];
+    });
+    const checked = await f.service.verify(domain.id);
+    expect(checked.external?.ownershipVerified).toBe(true);
+    expect(checked.external?.phase).toBe("certificate");
+  });
+
+  it("defaults verification to public recursive DNS and validates operator overrides", () => {
+    expect(loadConfig({ NODE_ENV: "test" }).EXTERNAL_DOMAIN_DNS_SERVERS).toEqual(["1.1.1.1", "8.8.8.8"]);
+    expect(loadConfig({ NODE_ENV: "test", EXTERNAL_DOMAIN_DNS_SERVERS: "192.0.2.53, 2001:db8::53" }).EXTERNAL_DOMAIN_DNS_SERVERS)
+      .toEqual(["192.0.2.53", "2001:db8::53"]);
+    expect(() => loadConfig({ NODE_ENV: "test", EXTERNAL_DOMAIN_DNS_SERVERS: "resolver.example.com" })).toThrow();
+  });
+
   it("requires ownership, correct CNAME, an active certificate and a deployment before routing", async () => {
     const f = await fixture(); f.makeProject("shared");
     const domain = f.service.create("shared", "portal.customer.example");

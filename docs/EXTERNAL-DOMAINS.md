@@ -78,6 +78,12 @@ issuance can delay activation.
 The domain list combines managed and customer domains. Expand a row for its DNS
 instructions, connection progress and access settings. Ownership, CNAME,
 certificate and deployment states are displayed separately.
+The verifier uses public recursive DNS (`1.1.1.1` and `8.8.8.8`) rather than
+the host's resolver, whose private overrides or negative cache can hide newly
+created records. Operators can set `EXTERNAL_DOMAIN_DNS_SERVERS` to one to four
+recursive DNS IP addresses, separated by spaces or commas. Outbound DNS to those
+servers must be allowed. Public resolvers can still cache older answers until
+their DNS TTL expires. **Check now** reports the remaining step after each check.
 Traffic is enabled only when the exact Cloudflare hostname and its certificate
 are active and the project has an active deployment with an internal port.
 External routes redirect HTTP to HTTPS. The original Host header is preserved.
