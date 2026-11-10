@@ -29,6 +29,22 @@ describe('empty mutation requests', () => {
   });
 });
 
+describe('Cloudflare permission errors', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ['en', 'CLOUDFLARE_OAUTH_SCOPE_MISSING', 'Reconnect Cloudflare'],
+    ['de', 'CLOUDFLARE_OAUTH_SCOPE_MISSING', 'Verbinde Cloudflare'],
+    ['en', 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED', 'Allow the connected credential'],
+    ['de', 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED', 'Erlaube dem verbundenen Zugang'],
+  ])('explains %s %s using the selected language', async (locale, code, message) => {
+    vi.stubGlobal('document', { documentElement: { lang: locale } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ code, message: 'Provider diagnostic' }, { status: 400 })));
+    await expect(api.configureExternalDomains({ zoneId: 'a'.repeat(32), cnameTarget: 'hosting.example.com' }))
+      .rejects.toMatchObject({ message: expect.stringContaining(message), status: 400 });
+  });
+});
+
 describe('GitHub repository api', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

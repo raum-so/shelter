@@ -29,11 +29,12 @@ The API currently follows the Shelter `1.0.0` contract. It is part of the MVP, s
 4. Give the token a purpose-specific name, choose its access level and expiration, then confirm with the current administrator password.
 5. Copy the secret immediately. Shelter stores only its hash and cannot show it again.
 
-Two access presets are available:
+Three access presets are available:
 
 | Preset | Scopes |
 | --- | --- |
 | Read only | `projects:read` |
+| Project domains only | `domains:write`, restricted to one selected project’s domain endpoints |
 | Deploy & manage | `projects:read`, `projects:write`, `deployments:write`, `uploads:write`, `domains:write`, `environment:write` |
 
 Tokens expire after at most 365 days. Revocation takes effect on the next request. Changing the administrator password revokes every active API token.
@@ -175,6 +176,10 @@ Use the Shelter CLI for this workflow unless direct HTTP integration is required
 ### Manage domains
 
 List active Cloudflare zones with `GET /api/settings/cloudflare/zones`. Add a hostname with `POST /api/projects/{projectId}/domains` and remove it with `DELETE /api/projects/{projectId}/domains/{domainId}`. Domain mutations require a connected Cloudflare account and the `domains:write` scope.
+
+For external customer subdomains, send `{"hostname":"portal.customer.com","connection":"external"}` to the same creation endpoint. The operator must first configure Cloudflare for SaaS in Settings. HTTP 202 returns DNS instructions in `domain.external.records`. Repeating creation for the same project and external hostname returns the existing binding. Poll `GET /api/projects/{projectId}/domains/{domainId}` or call `POST /api/projects/{projectId}/domains/{domainId}/verify`; activate your app-side domain mapping only after `domain.status` is `active`. `GET /api/projects/{projectId}/domains` returns all bindings and their verification details.
+
+A **Project domains only** token is recommended for application integration. The token creation endpoint accepts `access: "domains"` with the required `projectId`, alongside the existing fields. Such tokens can only call that project's domain endpoints and read `GET /api/settings/external-domains`. The session-only `PUT /api/settings/external-domains` validates `{zoneId, cnameTarget}` without modifying the provider fallback. See [setup, both tenancy modes and recovery](EXTERNAL-DOMAINS.md).
 
 Configure sharing and search visibility with:
 

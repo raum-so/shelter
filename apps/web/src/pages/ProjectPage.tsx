@@ -1,3 +1,4 @@
+import { ExternalCustomerDomains } from "../components/ExternalDomains";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
@@ -32,7 +33,7 @@ import { ProjectGitHubConnection } from '../components/ProjectGitHubConnection';
 import { ProjectPullRequestPreviews } from '../components/ProjectPullRequestPreviews';
 import { ProjectPreviewCard } from '../components/ProjectPreviewCard';
 import { ProjectObservabilityTab } from '../components/ProjectObservabilityTab';
-import { DomainAccessSettings } from '../components/DomainAccessSettings';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EnvironmentImportDialog } from '../components/EnvironmentImportDialog';
 import { StaticBasePathControl } from '../components/StaticBasePathControl';
 import { Button, ErrorState, Field, PageIntro, SelectField, Skeleton, StatusBadge } from '../components/ui';
@@ -504,6 +505,7 @@ export function ProjectPage() {
     onSettled: () => {
       invalidateProject();
       queryClient.invalidateQueries({ queryKey: ['cloudflare-hostname-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['project-domains', id] });
     },
   });
   const deleteProject = useMutation({
@@ -565,7 +567,7 @@ export function ProjectPage() {
     }),
   });
 
-  const primaryUrl = project?.url ?? safeUrl(project?.domains?.find((domain) => domain.status === 'active')?.hostname ?? project?.domains?.[0]?.hostname);
+  const primaryUrl = project?.url ?? safeUrl(project?.domains?.find((domain) => domain.status === 'active')?.hostname ?? project?.domains?.find(domain => domain.connection !== 'external')?.hostname);
   const environmentErrors = useMemo(() => {
     const knownKeys = new Set(project?.environmentKeys ?? []);
     const keys = environment.map((variable) => variable.key.trim());
@@ -1167,82 +1169,26 @@ export function ProjectPage() {
 
         <TabsContent value="domains">
           <motion.section className="grid gap-5" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
-            <SectionHeading
-              eyebrow="Cloudflare"
-              title="Domains"
-              description={t('Connect a hostname route through Cloudflare Tunnel without opening a public port on the server.', 'Verbinde eine Hostname-Route über Cloudflare Tunnel, ohne einen öffentlichen Port am Server zu öffnen.')}
-              action={(project.domains?.length ?? 0) > 0 ? (
-                <Button variant={domainFormOpen ? 'ghost' : 'outline'} onClick={() => {
-                  addDomain.reset();
-                  setDomainToReplace(undefined);
-                  setDomainMode('subdomain');
-                  setSubdomain('');
-                  setDomainFormOpen((open) => !open);
-                }}>
-                  {domainFormOpen ? <><X /> {t('Close form', 'Formular schließen')}</> : <><Plus /> {t('Add domain', 'Domain hinzufügen')}</>}
-                </Button>
-              ) : undefined}
+            <ExternalCustomerDomains
+              projectId={project.id}
+              projectName={project.name}
+              projectDomains={project.domains ?? []}
+              disabled={deletionFailed}
+              onRemove={domain => { removeDomain.reset(); setDomainToRemove(domain); }}
+              onEditManaged={beginDomainReplacement}
+              onAddManaged={() => {
+                addDomain.reset(); setDomainToReplace(undefined); setDomainMode('subdomain');
+                setSubdomain(''); setDomainFormOpen(true);
+              }}
             />
-
-            {(project.domains?.length ?? 0) > 0 && (
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>{t('Connected domains', 'Verbundene Domains')}</CardTitle>
-                  <CardDescription>{t(
-                    `${project.domains?.length ?? 0} connected ${(project.domains?.length ?? 0) === 1 ? 'hostname route' : 'hostname routes'}`,
-                    `${project.domains?.length ?? 0} verknüpfte ${(project.domains?.length ?? 0) === 1 ? 'Hostname-Route' : 'Hostname-Routen'}`,
-                  )}</CardDescription>
-                </CardHeader>
-                <CardContent className="divide-y">
-                  {project.domains?.map((domain) => (
-                    <article className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 py-3 first:pt-0 last:pb-0" key={domain.id}>
-                      <Globe2 className="mt-1 size-4 text-muted-foreground" aria-hidden="true" />
-                      <div className="min-w-0">
-                        <strong className="block truncate text-sm font-medium">{domain.hostname}</strong>
-                        <span className="mt-1 block break-words text-xs leading-relaxed text-muted-foreground">{domain.status === 'active'
-                          ? t('HTTPS active · via tunnel', 'HTTPS aktiv · via Tunnel')
-                          : domain.status === 'error'
-                            ? domain.error ?? t('Setup failed', 'Einrichtung fehlgeschlagen')
-                            : t('Setting up DNS/tunnel', 'DNS/Tunnel wird eingerichtet')}</span>
-                        <StatusBadge status={domain.status} className="mt-2" />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button asChild variant="ghost" size="icon" aria-label={t(`Open ${domain.hostname}`, `${domain.hostname} öffnen`)}>
-                          <a href={domain.url ?? safeUrl(domain.hostname)} target="_blank" rel="noreferrer"><ExternalLink /></a>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => beginDomainReplacement(domain)}
-                          disabled={addDomain.isPending || removeDomain.isPending || deletionFailed}
-                          aria-label={t(`Change ${domain.hostname}`, `${domain.hostname} ändern`)}
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { removeDomain.reset(); setDomainToRemove(domain); }} disabled={removeDomain.isPending || deletionFailed} aria-label={t(`Remove ${domain.hostname}`, `${domain.hostname} entfernen`)}><Trash2 /></Button>
-                      </div>
-                    </article>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            <DomainAccessSettings projectId={project.id} domains={project.domains ?? []} />
-
-            {((project.domains?.length ?? 0) === 0 || domainFormOpen) && (
-              <Card>
-                <CardHeader className="border-b">
-                  <CardTitle>{domainToReplace
-                    ? t('Replace domain', 'Domain ersetzen')
-                    : (project.domains?.length ?? 0) === 0
-                      ? t('Connect first domain', 'Erste Domain verbinden')
-                      : t('Add domain', 'Domain hinzufügen')}</CardTitle>
-                  <CardDescription>{domainToReplace
-                    ? t(`The new domain is activated first; Shelter then removes ${domainToReplace.hostname}.`, `Die neue Domain wird zuerst aktiviert; danach entfernt Shelter ${domainToReplace.hostname}.`)
-                    : t('Shelter checks availability before every DNS change.', 'Shelter prüft die Verfügbarkeit vor jeder DNS-Änderung.')}</CardDescription>
-                  <CardAction><Badge variant="secondary"><Cloud /> Cloudflare DNS</Badge></CardAction>
-                </CardHeader>
-                <CardContent>
+            <Dialog open={domainFormOpen} onOpenChange={open => { if (!addDomain.isPending) setDomainFormOpen(open); }}>
+              <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>{domainToReplace ? t('Replace Cloudflare domain', 'Cloudflare-Domain ersetzen') : t('Connect a Cloudflare domain', 'Cloudflare-Domain verbinden')}</DialogTitle>
+                  <DialogDescription>{domainToReplace
+                    ? t(`The new domain is activated before ${domainToReplace.hostname} is removed.`, `Die neue Domain wird aktiviert, bevor ${domainToReplace.hostname} entfernt wird.`)
+                    : t('Choose a domain from the connected account. Shelter creates its DNS record.', 'Wähle eine Domain aus dem verbundenen Konto. Shelter erstellt den DNS-Eintrag.')}</DialogDescription>
+                </DialogHeader>
                   <form className="grid gap-5" onSubmit={submitDomain}>
                     <div className="grid gap-2">
                       <Label>{t('Domain type', 'Domain-Typ')}</Label>
@@ -1357,9 +1303,8 @@ export function ProjectPage() {
                       </Button>
                     </div>
                   </form>
-                </CardContent>
-              </Card>
-            )}
+              </DialogContent>
+            </Dialog>
           </motion.section>
         </TabsContent>
 

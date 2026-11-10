@@ -16,6 +16,94 @@ afterEach(() => {
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
 
+const legacyScopes = ["account-settings.read", "zone.read", "dns.write", "argotunnel.write", "offline_access"];
+
+async function scopeFixture(scope: string | undefined) {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "shelter-oauth-scopes-"));
+  directories.push(dataDirectory);
+  const config = loadConfig({ NODE_ENV: "test", DATA_DIR: dataDirectory, APP_SECRET: "q".repeat(64),
+    CLOUDFLARE_OAUTH_CLIENT_ID: "client-id", CLOUDFLARE_OAUTH_CLIENT_SECRET: "client-secret",
+    CLOUDFLARE_OAUTH_REDIRECT_URI: "https://panel.example.com/api/settings/cloudflare/oauth/callback",
+    CLOUDFLARE_OAUTH_SCOPES: legacyScopes.join(" ") });
+  const database = new Database(config);
+  const userId = "scope-admin";
+  database.createUser({ id: userId, email: "admin@example.com", password_hash: "test-only", created_at: new Date().toISOString() });
+  database.createSession({ token_hash: hashToken("scope-session"), user_id: userId, csrf_hash: hashToken("csrf"), csrf_token: "csrf",
+    expires_at: new Date(Date.now() + 60000).toISOString(), created_at: new Date().toISOString() });
+  const active = { accessToken: "existing-access", refreshToken: "existing-refresh", tokenType: "Bearer",
+    expiresAt: new Date(Date.now() + 3600000).toISOString(), scopes: legacyScopes, clientId: "client-id",
+    redirectUri: config.CLOUDFLARE_OAUTH_REDIRECT_URI!, accounts: [{ id: "a".repeat(32), name: "Account" }] };
+  database.setSetting("cloudflare.oauth_credentials", encryptString(JSON.stringify(active), config.APP_SECRET));
+  const revoked: string[] = [];
+  const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/oauth2/token")) return Response.json({ access_token: "replacement-access", refresh_token: "replacement-refresh",
+      token_type: "Bearer", expires_in: 3600, ...(scope === undefined ? {} : { scope }) });
+    if (url.includes("/accounts?")) return Response.json({ success: true, result: active.accounts });
+    if (url.endsWith("/oauth2/revoke")) { revoked.push((init?.body as URLSearchParams).get("token")!); return new Response(null, { status: 200 }); }
+    throw new Error("Unexpected OAuth request");
+  });
+  return { config, database, userId, revoked, oauth: new CloudflareOAuthService(config, database, fetcher as typeof fetch) };
+}
+
+describe("Cloudflare OAuth permission upgrades", () => {
+  it("does not persist an unusable empty grant from a refresh", async () => {
+    const f = await scopeFixture("");
+    try {
+      const existing = { ...f.oauth.active()!, expiresAt: new Date(Date.now() - 60000).toISOString() };
+      f.database.setSetting("cloudflare.oauth_credentials", encryptString(JSON.stringify(existing), f.config.APP_SECRET));
+      await expect(f.oauth.accessToken()).rejects.toMatchObject({ code: "CLOUDFLARE_OAUTH_RESPONSE" });
+      expect(f.oauth.active()).toEqual(existing);
+      expect(f.revoked.sort()).toEqual(["replacement-access", "replacement-refresh"]);
+      expect(f.database.getSetting("cloudflare.oauth_reconnect_required")).toBe("1");
+    } finally { f.database.close(); }
+  });
+
+  it.each([
+    { label: "a partial grant", scope: legacyScopes.join(" "), accepted: false },
+    { label: "an explicit empty grant", scope: "", accepted: false },
+    { label: "an omitted scope response", scope: undefined, accepted: true },
+  ])("handles $label without silently weakening the active connection", async ({ scope, accepted }) => {
+    const f = await scopeFixture(scope);
+    try {
+      expect(f.oauth.reconnectRequired()).toBe(true);
+      expect(f.oauth.missingScopes()).toEqual(["ssl-and-certificates.write"]);
+      await expect(f.oauth.accessToken()).resolves.toBe("existing-access");
+      const flow = f.oauth.start({ userId: f.userId, sessionTokenHash: hashToken("scope-session") });
+      const url = new URL(flow.authorizationUrl);
+      const complete = f.oauth.complete(url.searchParams.get("state")!, flow.browserNonce, "provider-code");
+      if (accepted) {
+        await complete;
+        const pending = f.oauth.pendingCandidate(f.userId)!;
+        expect(pending.connection.scopes).toContain("ssl-and-certificates.write");
+        expect(f.oauth.active()?.accessToken).toBe("existing-access");
+        f.oauth.activatePending(f.userId, pending.version);
+        expect(f.oauth.reconnectRequired()).toBe(false);
+        expect(f.oauth.missingScopes()).toEqual([]);
+        expect(f.revoked).toEqual([]);
+      } else {
+        await expect(complete).rejects.toMatchObject({ code: "CLOUDFLARE_OAUTH_SCOPE_MISSING" });
+        expect(f.oauth.active()?.accessToken).toBe("existing-access");
+        expect(f.oauth.pending(f.userId)).toBeNull();
+        expect(f.revoked.sort()).toEqual(["replacement-access", "replacement-refresh"]);
+      }
+    } finally { f.database.close(); }
+  });
+
+  it("rejects a pre-upgrade pending grant before replacing the active connection", async () => {
+    const f = await scopeFixture(undefined);
+    try {
+      const connection = f.oauth.active()!;
+      f.database.upsertCloudflareOAuthPending({ user_id: f.userId,
+        encrypted_payload: f.database.getSetting("cloudflare.oauth_credentials")!,
+        expires_at: new Date(Date.now() + 60000).toISOString(), created_at: new Date().toISOString() });
+      const pending = f.oauth.pendingCandidate(f.userId)!;
+      expect(() => f.oauth.activatePending(f.userId, pending.version)).toThrow(/benötigten Rechte/);
+      expect(f.oauth.active()).toEqual(connection);
+    } finally { f.database.close(); }
+  });
+});
+
 describe("Cloudflare OAuth token refresh", () => {
   it("accepts only HTTP(S) OAuth proxy URLs", () => {
     expect(loadConfig({ NODE_ENV: "test", CLOUDFLARE_OAUTH_PROXY_URL: "https://proxy.example.com:8443" })
@@ -193,7 +281,7 @@ describe("Cloudflare OAuth token refresh", () => {
       encrypted_verifier: encryptString("pkce-verifier", config.APP_SECRET),
       redirect_uri: redirectUri,
       client_id: "client-id",
-      scopes: "account-settings.read offline_access",
+      scopes: "account-settings.read zone.read dns.write argotunnel.write ssl-and-certificates.write offline_access",
       expires_at: new Date(now.getTime() + 60_000).toISOString(),
       created_at: now.toISOString()
     });
@@ -211,7 +299,7 @@ describe("Cloudflare OAuth token refresh", () => {
           refresh_token: "proxied-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
-          scope: "account-settings.read offline_access"
+          scope: "account-settings.read zone.read dns.write argotunnel.write ssl-and-certificates.write offline_access"
         });
       }
       if (url === "https://api.cloudflare.com/client/v4/accounts?per_page=50&page=1") {

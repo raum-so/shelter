@@ -91,6 +91,7 @@ export function installAuthHook(app: FastifyInstance, database: Database): void 
         user,
         apiTokenId: apiToken.id,
         apiTokenName: apiToken.name,
+        projectId: apiToken.project_id ?? null,
         scopes
       };
       database.touchApiToken(apiToken.id);
@@ -113,9 +114,17 @@ export function installAuthHook(app: FastifyInstance, database: Database): void 
   });
 }
 
+function projectTokenAllows(request: FastifyRequest): boolean {
+  if (request.auth?.kind !== "apiToken" || !request.auth.projectId) return true;
+  if (request.method === "GET" && request.routeOptions.url === "/api/settings/external-domains") return true;
+  const params = request.params as { id?: string };
+  return /^\/api\/projects\/:id\/domains(?:\/|$)/.test(request.routeOptions.url ?? "")
+    && params.id === request.auth.projectId;
+}
+
 export function requireScopedAuth(scope: ApiTokenScope) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    if (request.auth?.kind === "session" || request.auth?.scopes.includes(scope)) return;
+    if (request.auth?.kind === "session" || (request.auth?.scopes.includes(scope) && projectTokenAllows(request))) return;
     if (request.auth?.kind === "apiToken") {
       await reply.code(403).send({ error: "API-Token hat nicht die erforderliche Berechtigung", code: "INSUFFICIENT_SCOPE" });
       return;
@@ -127,7 +136,7 @@ export function requireScopedAuth(scope: ApiTokenScope) {
 export function requireScopedMutation(scope: ApiTokenScope) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (request.auth?.kind === "apiToken") {
-      if (request.auth.scopes.includes(scope)) return;
+      if (request.auth.scopes.includes(scope) && projectTokenAllows(request)) return;
       await reply.code(403).send({ error: "API-Token hat nicht die erforderliche Berechtigung", code: "INSUFFICIENT_SCOPE" });
       return;
     }

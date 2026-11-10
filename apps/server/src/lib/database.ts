@@ -287,6 +287,26 @@ CREATE TABLE IF NOT EXISTS domains (
 );
 CREATE INDEX IF NOT EXISTS domains_project_idx ON domains(project_id);
 
+CREATE TABLE IF NOT EXISTS external_domains (
+  domain_id TEXT PRIMARY KEY REFERENCES domains(id) ON DELETE CASCADE,
+  zone_id TEXT NOT NULL,
+  cname_target TEXT NOT NULL,
+  verification_token TEXT NOT NULL,
+  provider_id TEXT,
+  phase TEXT NOT NULL DEFAULT 'ownership' CHECK(phase IN ('ownership','dns','certificate','deployment','active','removing','error')),
+  dns_ready INTEGER NOT NULL DEFAULT 0 CHECK(dns_ready IN (0,1)),
+  hostname_status TEXT NOT NULL DEFAULT 'pending',
+  tls_status TEXT NOT NULL DEFAULT 'pending',
+  verified_at TEXT,
+  checked_at TEXT,
+  next_check_at INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  validation_records_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(validation_records_json)),
+  UNIQUE(zone_id, provider_id)
+);
+CREATE INDEX IF NOT EXISTS external_domains_due_idx ON external_domains(next_check_at, locked_until);
+
 CREATE TABLE IF NOT EXISTS deployments (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -588,6 +608,9 @@ export class Database {
       this.sqlite.exec("DROP TABLE api_tokens");
     }
     this.sqlite.exec(schema);
+    if (!(this.sqlite.pragma("table_info(api_tokens)") as Array<{ name: string }>).some(column => column.name === "project_id")) {
+      this.sqlite.exec("ALTER TABLE api_tokens ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE");
+    }
     const sessionColumns = this.sqlite.pragma("table_info(sessions)") as Array<{ name: string }>;
     if (!sessionColumns.some((column) => column.name === "csrf_token")) {
       this.sqlite.exec("ALTER TABLE sessions ADD COLUMN csrf_token TEXT");
@@ -978,13 +1001,13 @@ export class Database {
       }
       this.sqlite.prepare(`
         INSERT INTO api_tokens (
-          id, user_id, name, token_hash, token_hint, scopes_json, expires_at,
+          id, user_id, name, token_hash, token_hint, scopes_json, expires_at, project_id,
           last_used_at, revoked_at, created_at, updated_at
         ) VALUES (
-          @id, @user_id, @name, @token_hash, @token_hint, @scopes_json, @expires_at,
+          @id, @user_id, @name, @token_hash, @token_hint, @scopes_json, @expires_at, @project_id,
           @last_used_at, @revoked_at, @created_at, @updated_at
         )
-      `).run(apiToken);
+      `).run({ ...apiToken, project_id: apiToken.project_id ?? null });
     });
     create.immediate();
   }
@@ -998,7 +1021,7 @@ export class Database {
 
   listApiTokens(userId: string): ApiTokenMetadataRow[] {
     return this.sqlite.prepare(`
-      SELECT id, user_id, name, token_hint, scopes_json, expires_at, last_used_at,
+      SELECT id, user_id, name, token_hint, scopes_json, expires_at, last_used_at, project_id,
              revoked_at, created_at, updated_at
       FROM api_tokens
       WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?
@@ -2710,8 +2733,14 @@ export class Database {
       }
       if (existing?.status === "preparing") return { kind: "preparing" } as const;
 
+      const externalOperation = this.sqlite.prepare(`SELECT 1 FROM external_domains e
+        JOIN domains d ON d.id = e.domain_id WHERE d.project_id = ? AND e.locked_until > ? LIMIT 1`
+      ).get(projectId, Date.now());
+      if (externalOperation) return { kind: "domain_pending" } as const;
+
       const pendingDomain = this.sqlite.prepare(`
-        SELECT 1 FROM domains WHERE project_id = ? AND status = 'pending' LIMIT 1
+        SELECT 1 FROM domains WHERE project_id = ? AND status = 'pending'
+          AND NOT EXISTS (SELECT 1 FROM external_domains e WHERE e.domain_id = domains.id) LIMIT 1
       `).get(projectId);
       if (pendingDomain) return { kind: "domain_pending" } as const;
 
@@ -2794,13 +2823,13 @@ export class Database {
 
   listDomains(projectId?: string): DomainRow[] {
     if (projectId) {
-      return this.sqlite.prepare("SELECT * FROM domains WHERE project_id = ? ORDER BY hostname").all(projectId) as DomainRow[];
+      return this.sqlite.prepare("SELECT domains.*, CASE WHEN EXISTS (SELECT 1 FROM external_domains e WHERE e.domain_id = domains.id) THEN 'external' ELSE 'cloudflare' END AS connection FROM domains WHERE project_id = ? ORDER BY hostname").all(projectId) as DomainRow[];
     }
-    return this.sqlite.prepare("SELECT * FROM domains ORDER BY hostname").all() as DomainRow[];
+    return this.sqlite.prepare("SELECT domains.*, CASE WHEN EXISTS (SELECT 1 FROM external_domains e WHERE e.domain_id = domains.id) THEN 'external' ELSE 'cloudflare' END AS connection FROM domains ORDER BY hostname").all() as DomainRow[];
   }
 
   getDomain(id: string): DomainRow | undefined {
-    return this.sqlite.prepare("SELECT * FROM domains WHERE id = ?").get(id) as DomainRow | undefined;
+    return this.sqlite.prepare("SELECT domains.*, CASE WHEN EXISTS (SELECT 1 FROM external_domains e WHERE e.domain_id = domains.id) THEN 'external' ELSE 'cloudflare' END AS connection FROM domains WHERE id = ?").get(id) as DomainRow | undefined;
   }
 
   createDomain(domain: DomainRow): void {
@@ -2835,7 +2864,7 @@ export class Database {
         "SELECT * FROM domains WHERE hostname = ? COLLATE NOCASE"
       ).get(domain.hostname) as DomainRow | undefined;
       if (existing) {
-        if (existing.project_id !== domain.project_id || existing.status !== "error") {
+        if (existing.project_id !== domain.project_id || existing.status !== "error" || this.sqlite.prepare("SELECT 1 FROM external_domains WHERE domain_id = ?").get(existing.id)) {
           return { kind: "domain_exists" } as const;
         }
         this.sqlite.prepare(`
@@ -2896,7 +2925,7 @@ export class Database {
     this.sqlite.prepare(`
       UPDATE domains
       SET status = 'error', error = 'Domain-Einrichtung wurde durch einen API-Neustart unterbrochen'
-      WHERE status = 'pending'
+      WHERE status = 'pending' AND NOT EXISTS (SELECT 1 FROM external_domains e WHERE e.domain_id = domains.id)
     `).run();
   }
 

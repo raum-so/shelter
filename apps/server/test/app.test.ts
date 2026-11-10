@@ -521,7 +521,7 @@ describe("Cloudflare OAuth", () => {
           refresh_token: "provider-refresh-token",
           token_type: "bearer",
           expires_in: 3600,
-          scope: oauthEnvironment.CLOUDFLARE_OAUTH_SCOPES
+          scope: oauthEnvironment.CLOUDFLARE_OAUTH_SCOPES + " ssl-and-certificates.write offline_access"
         });
       }
       if (url === "https://api.cloudflare.com/client/v4/accounts?per_page=50&page=1") {
@@ -606,7 +606,9 @@ describe("Cloudflare OAuth", () => {
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(redirectUri);
     expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
     expect(authorizationUrl.searchParams.get("code_challenge")?.length).toBeGreaterThan(20);
-    expect(authorizationUrl.searchParams.get("scope")?.split(" ")).toContain("offline_access");
+    expect(authorizationUrl.searchParams.get("scope")?.split(" ").sort()).toEqual([
+      "account-settings.read", "argotunnel.write", "dns.write", "offline_access", "ssl-and-certificates.write", "zone.read"
+    ]);
     expect(started.body).not.toContain("cloudflare-client-secret");
 
     const state = authorizationUrl.searchParams.get("state") ?? "";
@@ -722,6 +724,21 @@ describe("Cloudflare OAuth", () => {
     expect(callback.headers.location).toBe("https://panel.example.com/settings?cloudflare=error");
     expect(providerFetch).not.toHaveBeenCalled();
     await app.close();
+  });
+
+  it("returns a safe permission-repair outcome when Cloudflare rejects the requested scope", async () => {
+    const app = await testApp(oauthEnvironment);
+    try {
+      const auth = await login(app);
+      const started = await app.inject({ method: "POST", url: "/api/settings/cloudflare/oauth/start",
+        headers: { cookie: `shelter_session=${auth.sessionCookie}`, "x-csrf-token": auth.csrfToken } });
+      const state = new URL(started.json().authorizationUrl).searchParams.get("state")!;
+      const nonce = started.cookies.find(cookie => cookie.name === "shelter_cloudflare_oauth_nonce")!.value;
+      const result = await app.inject({ method: "GET", url: `/api/settings/cloudflare/oauth/callback?state=${encodeURIComponent(state)}&error=invalid_scope`,
+        headers: { cookie: `shelter_cloudflare_oauth_nonce=${nonce}` } });
+      expect(result.statusCode).toBe(303);
+      expect(result.headers.location).toBe("https://panel.example.com/settings?cloudflare=permissions");
+    } finally { await app.close(); }
   });
 
   it("rejects the callback when the originating Portsmith session no longer exists", async () => {

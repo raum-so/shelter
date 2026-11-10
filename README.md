@@ -56,7 +56,7 @@ Most deployment platforms trade ownership for convenience. Traditional self-host
 - **Upload-friendly:** ZIP files and complete folders are uploaded in chunks, validated, and versioned.
 - **Useful defaults:** live source analysis for Next.js, React, Astro, Node.js, Vite, static exports, and safe file collections, with custom Dockerfile support when needed.
 - **Safe activation:** a disposable, resource-bounded helper probes each candidate on its project-only network before Traefik receives the new route.
-- **Cloudflare integration:** OAuth, tunnels, zones, DNS, hostname availability, apex domains, and multiple project domains in one place.
+- **Cloudflare integration:** OAuth, tunnels, zones, DNS, hostname availability, apex domains, and multiple project domains in one place. [External customer subdomains](docs/EXTERNAL-DOMAINS.md) connect by CNAME through Cloudflare for SaaS, with ownership verification and automatic HTTPS. Shared applications and dedicated customer projects are both supported.
 - **Instant context:** successful website deployments receive an automatic screenshot preview in the project overview.
 - **Operator-ready:** dashboard, deployment logs, rollbacks, project deletion, encrypted variables, resource limits, and per-project runtime observability.
 - **Automation-ready:** scoped, expiring personal access tokens, a documented HTTP API, OpenAPI, and an installable `shelter` CLI.
@@ -327,6 +327,8 @@ Create a private self-managed OAuth client for this Shelter installation in Clou
 - **Response type:** `code`
 - **Grant types:** `authorization_code` and `refresh_token`
 - **Token authentication method:** `client_secret_basic`
+- **Allowed and required scopes:** `account-settings.read`, `zone.read`,
+  `dns.write`, `argotunnel.write`, `ssl-and-certificates.write`, and `offline_access`
 
 For the first connection over the SSH tunnel, register the exact browser URL, including scheme, local forwarding port, and path, with no trailing slash:
 
@@ -346,7 +348,7 @@ Add the credentials to `.env`:
 CLOUDFLARE_OAUTH_CLIENT_ID=...
 CLOUDFLARE_OAUTH_CLIENT_SECRET=...
 CLOUDFLARE_OAUTH_REDIRECT_URI=http://127.0.0.1:7080/api/settings/cloudflare/oauth/callback
-CLOUDFLARE_OAUTH_SCOPES=account-settings.read zone.read dns.write argotunnel.write
+CLOUDFLARE_OAUTH_SCOPES=account-settings.read zone.read dns.write argotunnel.write ssl-and-certificates.write
 ```
 
 Optional settings:
@@ -356,11 +358,30 @@ Optional settings:
 CLOUDFLARE_OAUTH_PROXY_URL=http://proxy.internal:3128
 ```
 
-The default scope IDs cover Account Read, Zone Read, DNS Write, and Cloudflare Tunnel Write. Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
+The required scope IDs cover Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write (`ssl-and-certificates.write`) for customer-domain HTTPS. Shelter always includes this minimum and `offline_access`, including when an older `CLOUDFLARE_OAUTH_SCOPES` value is present; additional configured scopes are preserved. Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
 
 ```sh
 docker compose up -d --force-recreate api
 ```
+
+### Upgrade an existing OAuth connection
+
+Allow `ssl-and-certificates.write` as a required scope in the existing private
+Cloudflare OAuth client before reconnecting. Keep its client ID, secret, callback
+URL, and existing permissions. A client that does not allow the new scope can
+reject authorization with `invalid_scope`.
+
+After updating Shelter, open **Settings → Cloudflare** and choose **Reconnect
+Cloudflare** in the permission warning. Approve the requested rights, return to
+Shelter, and confirm the existing account, tunnel, and panel hostname. Do not
+use **Disconnect** first. Shelter stages the replacement and only activates it
+after validation, preserving the current connection if consent fails or omits
+required rights. It does not silently upgrade an existing grant or rewrite its
+stored scopes. Existing project routes remain available while reconnecting.
+
+Then open **Cloudflare for SaaS — basic setup**, verify the existing fallback,
+and save it. New installations use the same scopes by default. API-token setup
+also includes **SSL and Certificates Edit** in its permission template.
 
 ### Finish setup in Shelter
 
@@ -379,7 +400,7 @@ Access and refresh tokens are encrypted under `APP_SECRET`. Disconnecting Cloudf
 
 ### API-token configuration
 
-For the guided token path, create a narrowly scoped Cloudflare API token with the same four permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
+For the guided token path, create a narrowly scoped Cloudflare API token with the same five permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
 
 ### Cloudflare Access
 

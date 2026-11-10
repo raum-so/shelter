@@ -9,6 +9,7 @@ export interface SessionAuthentication {
 }
 
 export interface ApiTokenAuthentication {
+  projectId?: string | null;
   kind: "apiToken";
   user: UserRow;
   apiTokenId: string;

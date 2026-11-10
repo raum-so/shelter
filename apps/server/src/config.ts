@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { CLOUDFLARE_REQUIRED_OAUTH_SCOPES } from "./lib/cloudflare-scopes.js";
 
 const optionalTrimmedString = z.preprocess(
   (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -88,7 +89,7 @@ const ConfigSchema = z.object({
       .min(1)
       .max(2048)
       .regex(/^[A-Za-z0-9._:-]+(?:\s+[A-Za-z0-9._:-]+)*$/)
-      .default("account-settings.read zone.read dns.write argotunnel.write")
+      .default(CLOUDFLARE_REQUIRED_OAUTH_SCOPES.join(" "))
   )
 }).superRefine((config, context) => {
   if (parseDockerMemoryBytes(config.BUILD_MEMORY_SWAP) < parseDockerMemoryBytes(config.BUILD_MEMORY)) {

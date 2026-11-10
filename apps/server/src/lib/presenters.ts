@@ -88,6 +88,7 @@ export function presentProject(
     project.domains = domains.map((domain) => ({
       id: domain.id,
       hostname: domain.hostname,
+      connection: domain.connection ?? "cloudflare",
       status: domain.status,
       error: domain.error,
       passwordProtectionEnabled: domain.password_protection_enabled === 1,

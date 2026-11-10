@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { ExternalDomains } from "./services/external-domains.js";
+import { registerExternalDomainRoutes } from "./routes/external-domains.js";
 import path from "node:path";
 import cookie from "@fastify/cookie";
 import formbody from "@fastify/formbody";
@@ -106,6 +108,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
   const uploads = new UploadService(config, database);
   const cloudflare = new CloudflareService(config, database);
   const github = new GitHubService(config, database);
+  const externalDomains = new ExternalDomains(config, database, cloudflare);
   const previewDns = new PreviewDnsReconciler(database, cloudflare);
   registerBrandingRoutes(app, database, config.WEB_DIST);
   registerAuthRoutes(app, config, database);
@@ -113,7 +116,9 @@ export async function createApp(config: AppConfig, database = new Database(confi
   registerOpenApiRoutes(app, database);
   registerApiTokenRoutes(app, database);
   registerUploadRoutes(app, uploads);
-  registerProjectRoutes(app, config, database, uploads, cloudflare, github);
+  registerProjectRoutes(app, config, database, uploads, cloudflare, github, externalDomains);
+  registerExternalDomainRoutes(app, database, cloudflare, externalDomains);
+  externalDomains.start();
   registerPullRequestPreviewRoutes(app, config, database, cloudflare, github);
   registerProjectObservabilityRoutes(app, config, database);
   registerDeploymentRoutes(app, database);
@@ -168,6 +173,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
 
   reconcileRouting(config, database);
   app.addHook("onClose", async () => {
+    await externalDomains.stop();
     uploads.close();
     database.close();
   });

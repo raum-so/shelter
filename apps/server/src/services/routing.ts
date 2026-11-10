@@ -45,6 +45,7 @@ export function reconcileRouting(config: AppConfig, database: Database): void {
     for (const domain of domains) {
       const routerName = routeName(`${project.id}-${domain.id}`);
       const middlewareNames = [
+        ...(domain.connection === "external" ? ["external-https"] : []),
         ...(domain.password_protection_enabled === 1 ? [`site-access-${routerName}`] : []),
         ...((domain.password_protection_enabled === 1 || domain.seo_indexing === 0) ? [`noindex-${routerName}`] : []),
         "secure-headers",
@@ -65,7 +66,7 @@ export function reconcileRouting(config: AppConfig, database: Database): void {
           "      priority: 1000",
           "      entryPoints: [web]",
           "      service: shelter-access",
-          `      middlewares: [noindex-${routerName}, secure-headers, compress]`
+          `      middlewares: [${domain.connection === "external" ? "external-https, " : ""}noindex-${routerName}, secure-headers, compress]`
         );
       }
     }
@@ -157,6 +158,10 @@ export function reconcileRouting(config: AppConfig, database: Database): void {
 
   lines.push(
     "  middlewares:",
+    "    external-https:",
+    "      redirectScheme:",
+    "        scheme: https",
+    "        permanent: true",
     "    compress:",
     "      compress: {}",
     "    secure-headers:",

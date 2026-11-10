@@ -158,7 +158,7 @@ After each processed deployment, the worker limits only Shelter's dedicated buil
 
 ### Cloudflare and DNS
 
-- The OAuth client requests only Account Read, Zone Read, DNS Write, and Cloudflare Tunnel Write. The API-token fallback can be restricted to one account and selected zones.
+- The OAuth client requires Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write for customer-domain certificates. The API-token fallback can be restricted to one account and selected zones.
 - Shelter searches zones only under the configured account ID.
 - An existing DNS record that does not target the Shelter tunnel is not adopted or overwritten.
 - A DNS record is deleted only if it still points to Shelter's tunnel.
@@ -229,7 +229,7 @@ A complete backup of `.env`, `shelter-data`, `shelter-routing`, and `shelter-tun
 - Allow inbound SSH only. Shelter does not require public ports 80, 443, or 7080.
 - Allow outbound TCP and UDP 7844 for `cloudflared`, plus required HTTPS, DNS, Git, registry, and package destinations.
 - Restrict Docker access to the smallest possible operator group; membership in `docker` is root-equivalent.
-- Prefer a private self-managed Cloudflare OAuth client with Account Read, Cloudflare Tunnel Write, Zone Read, and DNS Write. Restrict the API-token fallback to the same account and required zones.
+- Prefer a private self-managed Cloudflare OAuth client with Account Read, Cloudflare Tunnel Write, Zone Read, DNS Write, and SSL and Certificates Write. Restrict the API-token fallback to the same account and required zones.
 - Register a stable HTTPS callback URL. Use an HTTP loopback callback only briefly through a controlled SSH forward, never over an exposed network, then update the Cloudflare client and `.env` together to the exact final HTTPS callback.
 - Manually configure Cloudflare Access with a restrictive identity or device policy for the panel domain, verify the exact hostname in Cloudflare, and only then save Shelter's hostname-bound administrator confirmation. Do not treat that confirmation as automated policy verification.
 - Deploy trusted sources only and review pull requests and dependency changes before building.
@@ -283,3 +283,32 @@ bounded PNGs; uploaded SVG, scripts, arbitrary CSS/HTML and remote asset fetchin
 are disallowed. Text is escaped in server-rendered HTML and bootstrap JSON.
 Branding does not change cookie names, authentication scopes, routing identifiers,
 Docker resources, or existing GitHub App registrations.
+
+### External customer domains
+
+External CNAME bindings require a random, binding-specific DNS TXT proof before
+Shelter creates a Cloudflare for SaaS custom hostname. CNAME, hostname activation,
+certificate activation and an active deployment are required before routing.
+DNS checks never fetch customer-controlled URLs. Public-suffix validation rejects
+apex names and IPs. A stale CNAME alone cannot verify a new binding.
+
+The configured fallback must be active and point through a proxied CNAME to this
+installation's exact tunnel. Its hostname can be the configured primary panel
+domain; sharing that DNS destination does not assign the panel hostname to a
+project or change Host-based routing. Setup validates it without replacing
+zone-wide provider settings. Only stored custom-hostname IDs with the expected hostname
+and no custom-origin drift can be deleted. Removal disables traffic first and
+persists failed cleanup for retry; it never removes customer DNS or the fallback.
+
+Project-domain API tokens are restricted to one project's domain routes. Keep
+these tokens on the application's backend. Domain selection does not establish
+customer authorization: tenant data isolation, branding, host-scoped sessions and
+approved authentication callback URLs remain application responsibilities.
+See [external-domain operations and rollback](docs/EXTERNAL-DOMAINS.md).
+
+OAuth upgrades never infer additional grants from requested scopes. Explicitly
+reduced token responses are rejected before a new connection is staged; if the
+provider omits `scope`, the OAuth requested-scope fallback applies. Existing
+credentials with missing permissions remain usable for their granted operations
+and require user reauthorization. A pending grant created before the upgrade
+is rechecked before activation.

@@ -223,9 +223,10 @@ function DomainAccessCard({ projectId, domain }: { projectId: string; domain: Do
   );
 }
 
-export function DomainAccessSettings({ projectId, domains }: { projectId: string; domains: Domain[] }) {
+export function DomainAccessSettings({ projectId, domains, compact = false }: { projectId: string; domains: Domain[]; compact?: boolean }) {
   const { t } = useI18n();
   if (domains.length === 0) return null;
+  if (compact) return <>{domains.map(domain => <DomainAccessCard key={domain.id} projectId={projectId} domain={domain} />)}</>;
   return (
     <Card>
       <CardHeader className="border-b">

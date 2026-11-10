@@ -14,6 +14,7 @@ import type {
   Deployment,
   Domain,
   DomainAccessInput,
+  ExternalDomainSettings,
   EnvironmentVariable,
   GitHubBranch,
   GitHubPreviewCapability,
@@ -64,6 +65,18 @@ export function setCsrfToken(token?: string | null) {
 function extractMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
+    if (record.code === 'CLOUDFLARE_OAUTH_SCOPE_MISSING') {
+      return localize(
+        'The Cloudflare login is missing SSL and Certificates Write. Reconnect Cloudflare in Settings and approve the additional permission.',
+        'Dem Cloudflare-Login fehlt SSL and Certificates Write. Verbinde Cloudflare in den Einstellungen neu und erlaube das zusätzliche Recht.',
+      );
+    }
+    if (record.code === 'CLOUDFLARE_SAAS_PERMISSION_REQUIRED') {
+      return localize(
+        'Cloudflare denied access to the SaaS setup. Allow the connected credential SSL and Certificates Write for this domain.',
+        'Cloudflare verweigert den Zugriff auf die SaaS-Einrichtung. Erlaube dem verbundenen Zugang SSL and Certificates Write für diese Domain.',
+      );
+    }
     if (typeof record.message === 'string') return brandCopy(record.message);
     if (typeof record.error === 'string') return brandCopy(record.error);
   }
@@ -446,6 +459,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ deploymentId }),
     })));
+  },
+
+  async externalDomainSettings() {
+    return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains')).externalDomains;
+  },
+
+  async configureExternalDomains(input: { zoneId: string; cnameTarget: string }) {
+    return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains', {
+      method: 'PUT', body: JSON.stringify(input),
+    })).externalDomains;
+  },
+
+  async projectDomains(id: string) {
+    return (await request<{ domains: Domain[] }>(`/api/projects/${encodeURIComponent(id)}/domains`)).domains;
+  },
+
+  async addExternalDomain(id: string, hostname: string) {
+    return (await request<{ domain: Domain }>(`/api/projects/${encodeURIComponent(id)}/domains`, {
+      method: 'POST', body: JSON.stringify({ hostname, connection: 'external' }),
+    })).domain;
+  },
+
+  async verifyExternalDomain(id: string, domainId: string) {
+    return (await request<{ domain: Domain }>(`/api/projects/${encodeURIComponent(id)}/domains/${encodeURIComponent(domainId)}/verify`, {
+      method: 'POST',
+    })).domain;
   },
 
   async addDomain(id: string, hostname: string, zoneId: string) {

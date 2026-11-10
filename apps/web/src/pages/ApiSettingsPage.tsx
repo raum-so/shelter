@@ -47,7 +47,8 @@ import { formatDate, formatRelative } from '@/utils/format';
 
 interface TokenForm {
   name: string;
-  access: 'read' | 'write';
+  access: 'read' | 'write' | 'domains';
+  projectId: string;
   expiresInDays: string;
   currentPassword: string;
 }
@@ -55,6 +56,7 @@ interface TokenForm {
 const emptyForm: TokenForm = {
   name: '',
   access: 'write',
+  projectId: '',
   expiresInDays: '90',
   currentPassword: '',
 };
@@ -77,6 +79,7 @@ async function copyText(value: string): Promise<void> {
 }
 
 function accessLabel(token: ApiTokenSummary, t: ReturnType<typeof useI18n>['t']) {
+  if (token.scopes.includes('domains:write') && token.projectId) return t('Project domains', 'Projekt-Domains');
   return token.scopes.length === 1
     ? t('Read only', 'Nur lesen')
     : t('Deploy & manage', 'Deployen & verwalten');
@@ -98,6 +101,7 @@ export function ApiSettingsPage() {
     staleTime: 15_000,
   });
 
+  const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const revokeToken = useMutation({
     mutationFn: api.revokeApiToken,
     onSuccess: async () => {
@@ -138,6 +142,7 @@ export function ApiSettingsPage() {
       const result = await api.createApiToken({
         name: form.name.trim(),
         access: form.access,
+        ...(form.access === 'domains' ? { projectId: form.projectId } : {}),
         expiresInDays: Number(form.expiresInDays),
         currentPassword: form.currentPassword,
       });
@@ -234,6 +239,7 @@ export function ApiSettingsPage() {
                         >
                           <option value="read">{t('Read only', 'Nur lesen')}</option>
                           <option value="write">{t('Deploy & manage', 'Deployen & verwalten')}</option>
+                          <option value="domains">{t('Project domains only', 'Nur Projekt-Domains')}</option>
                         </SelectField>
                         <SelectField
                           label={t('Expires after', 'Läuft ab nach')}
@@ -246,6 +252,10 @@ export function ApiSettingsPage() {
                           <option value="365">365 {t('days', 'Tagen')}</option>
                         </SelectField>
                       </div>
+                      {form.access === 'domains' && <SelectField label={t('Project', 'Projekt')} value={form.projectId} required onChange={event => setForm(current => ({ ...current, projectId: event.target.value }))}>
+                        <option value="">{t('Choose a project', 'Projekt auswählen')}</option>
+                        {projects.data?.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </SelectField>}
                       <Field
                         label={t('Current administrator password', 'Aktuelles Admin-Passwort')}
                         name="currentPassword"
