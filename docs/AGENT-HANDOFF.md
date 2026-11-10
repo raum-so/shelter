@@ -93,14 +93,19 @@ The source pilot was checked on 2026-11-10:
   `FUNCTION_VALIDATION_FAILED`, preserves cleanup, and does not replace the
   active function. Do not turn a validation timeout into a successful upload.
 
-An operator-requested live customer binding also passed TXT ownership and CNAME
-verification after the public-DNS fix. At this handoff checkpoint, its custom
-hostname was active and Cloudflare certificate validation was still pending.
-Do not remove that live binding for testing. Full certificate issuance,
-application Host handling, both deployment layouts, and removal/cleanup still
-need their own acceptance evidence. Use explicitly authorized disposable
-resources for destructive tests; do not describe mocked provider tests as that
-end-to-end acceptance.
+An operator-requested live customer binding passed TXT ownership and CNAME
+verification after the public-DNS fix. An existing blanket HTTP redirect then
+blocked the ACME validation paths. After the operator approved a narrow path
+exception, both validation URLs returned HTTP 200 with the expected tokens.
+Cloudflare's hostname and certificate reached `active`, Shelter displayed all
+four readiness steps, and the application loaded at the customer hostname with
+valid HTTPS and HTTP 200. No application deployment was needed for activation.
+
+Do not remove that live binding for testing. Application-specific tenant
+isolation, both deployment layouts, and removal/cleanup still need their own
+acceptance evidence. Use explicitly authorized disposable resources for
+destructive tests; do not describe mocked provider tests as that end-to-end
+acceptance.
 
 ## Continue safely
 
