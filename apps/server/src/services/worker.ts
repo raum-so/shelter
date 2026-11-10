@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import extractZip from "extract-zip";
+import { extractZipArchive } from "./uploads.js";
 import { parseDockerMemoryBytes, type AppConfig } from "../config.js";
 import {
   CommandCancelledError,
@@ -930,7 +930,7 @@ export class DeploymentWorker {
     if (!fs.existsSync(archivePath)) throw new Error("Quellarchiv fehlt");
     this.log(deployment.id, "system", "Entpacke geprüftes Quellarchiv.");
     await fs.promises.mkdir(sourceRoot, { recursive: true, mode: 0o700 });
-    await extractZip(archivePath, { dir: sourceRoot });
+    await extractZipArchive(archivePath, sourceRoot, Math.min(this.config.MAX_UPLOAD_MB * 5 * 1024 * 1024, 2 * 1024 * 1024 * 1024));
     this.throwIfDeploymentCancelled(deployment.id, signal);
     return findContentRoot(sourceRoot, project.root_directory);
   }
