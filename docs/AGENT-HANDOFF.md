@@ -86,6 +86,12 @@ The source pilot was checked on 2026-11-10:
   verified after installation. This does not certify unrelated Access policies.
 - Local regression suites cover DNS and provider failure states, scoped tokens,
   both project layouts, OAuth upgrades, and the HTTP 415 regression.
+- The opt-in `npm run test:supabase` suite passed all three real Docker cases,
+  including RLS, Studio/API protection, credential rotation, Edge Functions,
+  encrypted data recovery, and isolated restore networking. An invalid candidate
+  can exhaust the bounded runtime request; that path now reports
+  `FUNCTION_VALIDATION_FAILED`, preserves cleanup, and does not replace the
+  active function. Do not turn a validation timeout into a successful upload.
 
 An operator-requested live customer binding also passed TXT ownership and CNAME
 verification after the public-DNS fix. At this handoff checkpoint, its custom
