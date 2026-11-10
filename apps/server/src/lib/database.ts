@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { SUPABASE_SCHEMA } from "../services/supabase-store.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import BetterSqlite3 from "better-sqlite3";
@@ -51,7 +52,7 @@ function projectTimestampAfter(previous: string): string {
 
 const GITHUB_STATUS_SNAPSHOT_SINCE_SETTING = "github.status_snapshot_since";
 
-const schema = `
+const schema = SUPABASE_SCHEMA + `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -637,6 +638,8 @@ export class Database {
       this.sqlite.exec("DROP TABLE api_tokens");
     }
     this.sqlite.exec(schema);
+    const supabaseBackupColumns = this.sqlite.pragma("table_info(supabase_backups)") as Array<{name:string}>;
+    if (!supabaseBackupColumns.some(column => column.name === "settings_json")) this.sqlite.exec("ALTER TABLE supabase_backups ADD COLUMN settings_json TEXT");
     if (!(this.sqlite.pragma("table_info(api_tokens)") as Array<{ name: string }>).some(column => column.name === "project_id")) {
       this.sqlite.exec("ALTER TABLE api_tokens ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE");
     }

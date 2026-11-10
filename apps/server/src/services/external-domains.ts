@@ -89,7 +89,8 @@ export class ExternalDomains {
     if (!settings.configured || !settings.zoneId || !settings.cnameTarget) {
       throw badRequest("Configure external customer domains in Cloudflare settings first", "EXTERNAL_DOMAINS_NOT_CONFIGURED");
     }
-    if (hostname === settings.cnameTarget || panelHostnames(this.database).includes(hostname)) {
+    if (hostname === settings.cnameTarget || panelHostnames(this.database).includes(hostname)
+      || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(hostname)) {
       throw conflict("This hostname is reserved", "PANEL_DOMAIN");
     }
     const domain: DomainRow = {

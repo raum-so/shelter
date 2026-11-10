@@ -315,7 +315,7 @@ function initialEnvironmentRows(config: AppConfig, projectId: string, variables:
   });
 }
 
-function assertEnvironmentSize(variables: Array<{ key: string; value: string }>): void {
+export function assertEnvironmentSize(variables: Array<{ key: string; value: string }>): void {
   const total = variables.reduce((bytes, variable) => (
     bytes + Buffer.byteLength(variable.key, "utf8") + Buffer.byteLength(variable.value, "utf8") + 2
   ), 0);
@@ -844,7 +844,7 @@ export function registerProjectRoutes(
     }
     const hostname = normalizeHostname(input.hostname);
     if (hostname === cloudflare.externalDomainSettings().cnameTarget) throw conflict("This hostname is reserved", "DOMAIN_EXISTS");
-    if (panelHostnames(database).includes(hostname)) {
+    if (database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(hostname) || panelHostnames(database).includes(hostname)) {
       return reply.code(409).send({ error: "Diese Domain ist für das Shelter-Panel reserviert", code: "PANEL_DOMAIN" });
     }
     const pending = database.createOrRetryPendingDomain({

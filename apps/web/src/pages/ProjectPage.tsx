@@ -1,3 +1,4 @@
+import { SupabaseConnections } from "@/components/services/SupabaseConnections";
 import { ExternalCustomerDomains } from "../components/ExternalDomains";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
@@ -1306,6 +1307,7 @@ export function ProjectPage() {
         </TabsContent>
 
         <TabsContent value="environment">
+          {!fileStorage && <Card className="mb-6"><CardContent><SupabaseConnections project={{ id: project.id, name: project.name }} /></CardContent></Card>}
           <motion.section className="grid gap-5" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}>
             <SectionHeading
               eyebrow={t('Configuration', 'Konfiguration')}

@@ -1,5 +1,8 @@
 import { installSecurityAudit } from "./services/security-audit.js";
+import { registerSmtpRoutes } from "./routes/smtp.js";
+import { registerSupabaseStudioRoutes } from "./routes/supabase-studio.js";
 import fs from "node:fs";
+import { registerSupabaseRoutes } from "./routes/supabase.js";
 import { ExternalDomains } from "./services/external-domains.js";
 import { registerExternalDomainRoutes } from "./routes/external-domains.js";
 import path from "node:path";
@@ -66,7 +69,7 @@ export async function createApp(config: AppConfig, database = new Database(confi
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("server", "web");
     reply.header("x-content-type-options", "nosniff");
-    reply.header("referrer-policy", "strict-origin-when-cross-origin");
+    if (!reply.hasHeader("referrer-policy")) reply.header("referrer-policy", "strict-origin-when-cross-origin");
     reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
     reply.header("x-frame-options", "DENY");
     reply.header("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com");
@@ -124,6 +127,9 @@ export async function createApp(config: AppConfig, database = new Database(confi
   registerPullRequestPreviewRoutes(app, config, database, cloudflare, github);
   registerProjectObservabilityRoutes(app, config, database);
   registerDeploymentRoutes(app, database);
+  registerSupabaseRoutes(app, config, database);
+  registerSupabaseStudioRoutes(app, config, database);
+  registerSmtpRoutes(app, config, database);
   registerSettingsRoutes(app, cloudflare);
   registerGithubRoutes(app, github);
   registerServerMetricsRoutes(app, config, database);

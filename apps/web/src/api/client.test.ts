@@ -646,3 +646,38 @@ describe('server metrics api', () => {
     }));
   });
 });
+
+describe("Supabase backup settings API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("sends editable settings without server metadata from the loaded form", async () => {
+    const loaded = {
+      enabled: true,
+      verifyWeekly: true,
+      hourUtc: 3,
+      nextAt: "2026-10-28T03:00:00Z",
+      destination: "s3" as const,
+      s3: {
+        endpoint: "https://s3.example.com",
+        region: "eu-central-1",
+        bucket: "backups",
+        accessKeyId: "test-access",
+        hasSecret: true,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(loaded));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.supabaseSaveBackupPolicy("sb_example", loaded);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      enabled: true,
+      verifyWeekly: true,
+      hourUtc: 3,
+      destination: "s3",
+      s3: {
+        endpoint: "https://s3.example.com",
+        region: "eu-central-1",
+        bucket: "backups",
+        accessKeyId: "test-access",
+      },
+    });
+  });
+});

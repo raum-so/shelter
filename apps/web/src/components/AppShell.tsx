@@ -75,6 +75,7 @@ export function AppShell({ session }: { session: Session }) {
   const label = userLabel(session.user);
   const navigation = useMemo(() => [
     { to: '/dashboard', label: t('Dashboard', 'Dashboard'), icon: LayoutDashboard, end: true },
+    { to: '/services', label: t('Services', 'Dienste'), icon: Server, end: false },
     { to: '/projects', label: t('Projects', 'Projekte'), icon: FolderKanban, end: false },
     { to: '/setup', label: t('Setup guide', 'Einrichtung'), icon: CheckIcon, end: false },
     { to: '/server', label: t('Server', 'Server'), icon: Gauge, end: true },

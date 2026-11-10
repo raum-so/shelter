@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { SupabaseWorker } from "./supabase-worker.js";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -149,6 +150,7 @@ export class DeploymentWorker {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private activeDeploymentAbort: AbortController | null = null;
   private previewBackfillPending = true;
+  private readonly supabase: SupabaseWorker;
   private readonly projectDeletion: ProjectDeletionWorker;
   private readonly github: GitHubService;
   private readonly metrics: ServerMetricsCollector;
@@ -163,6 +165,7 @@ export class DeploymentWorker {
     private readonly command: WorkerCommandRunner = runCommand,
     private readonly diskStat: WorkerDiskStatProvider = async (target) => fs.promises.statfs(target, { bigint: true })
   ) {
+    this.supabase = new SupabaseWorker(config, database, command);
     this.projectDeletion = new ProjectDeletionWorker(config, database);
     this.github = new GitHubService(config, database);
     this.metrics = new ServerMetricsCollector(config, database);
@@ -174,6 +177,7 @@ export class DeploymentWorker {
     await this.reconcileProjectNetworks(true);
     await this.resetWorkspaces();
     this.projectDeletion.recoverInterrupted();
+    await this.supabase.recover();
     await this.recoverInterruptedDeployments();
     await this.cleanupInactiveRuntimeContainers();
     this.database.reconcileGithubStatusOutbox();
@@ -196,6 +200,7 @@ export class DeploymentWorker {
         await this.reconcileProjectNetworks();
         await this.reconcileCloudflaredRestart();
         if (await this.cleanupNextPullRequestPreview()) continue;
+        if (await this.supabase.processNext()) continue;
         if (await this.projectDeletion.processNext()) continue;
         if (await this.github.processNextWebhookJob()) continue;
         if (await this.github.processNextCommitStatus()) continue;

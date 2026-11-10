@@ -210,6 +210,7 @@ export class CloudflareService {
     // Reusing the primary DNS destination does not make it a project domain.
     // A saved former primary remains valid after a panel-domain transition.
     if ((panelHostnames(this.database).includes(cnameTarget) && cnameTarget !== primaryDomain && cnameTarget !== current.cnameTarget)
+      || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(cnameTarget)
       || this.database.listDomains().some(domain => domain.hostname === cnameTarget)) {
       throw conflict("The connection target is already assigned", "DOMAIN_EXISTS");
     }
@@ -519,7 +520,7 @@ export class CloudflareService {
     if (panelHostnames(this.database).includes(hostname)) {
       return { hostname, availability: false, reason: "PANEL_DOMAIN_RESERVED", zone };
     }
-    if (this.database.listDomains().some((domain) => domain.hostname.toLowerCase() === hostname)) {
+    if ((this.database.listDomains().some((domain) => domain.hostname.toLowerCase() === hostname) || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(hostname))) {
       return { hostname, availability: false, reason: "SHELTER_DOMAIN_ASSIGNED", zone };
     }
 
@@ -559,7 +560,8 @@ export class CloudflareService {
     const requestedPanelDomain = input.panelDomain ? normalizeHostname(input.panelDomain) : undefined;
     if (requestedPanelDomain && ((requestedPanelDomain === this.externalDomainSettings().cnameTarget
       && requestedPanelDomain !== this.database.getSetting("cloudflare.panel_domain"))
-      || this.database.listDomains().some((domain) => domain.hostname === requestedPanelDomain))) {
+      || this.database.listDomains().some((domain) => domain.hostname === requestedPanelDomain)
+      || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(requestedPanelDomain))) {
       throw conflict("Die Panel-Domain ist bereits einem Projekt zugeordnet", "PANEL_DOMAIN_CONFLICT");
     }
 
@@ -688,6 +690,11 @@ export class CloudflareService {
       const panelDomain = requestedPanelDomain;
       const dns = await this.ensureDnsRecordWith(client, accountId, panelDomain, ownedTunnel.id);
       this.database.sqlite.transaction(() => {
+        // Recheck after provider I/O: a service or project may have claimed it meanwhile.
+        if (this.database.listDomains().some(domain => domain.hostname === panelDomain)
+          || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(panelDomain)) {
+          throw conflict("Domain ist inzwischen einem Projekt oder Dienst zugeordnet", "SHELTER_DOMAIN_ASSIGNED");
+        }
         storePanelDomainTransition(this.database, panelDomain, dns.zoneId, dns.recordId);
       })();
     }

@@ -284,6 +284,75 @@ are disallowed. Text is escaped in server-rendered HTML and bootstrap JSON.
 Branding does not change cookie names, authentication scopes, routing identifiers,
 Docker resources, or existing GitHub App registrations.
 
+
+## Managed Supabase
+
+Supabase instances use a pinned, curated nine-service template. Only the worker
+controls Docker. Each instance has separate backend and ingress networks;
+Traefik joins ingress only, and only the gateway joins both. Postgres binds an
+assigned host port exclusively to loopback for SSH forwarding. No Supabase
+container mounts the Docker socket, host directories, or another instance's
+volumes. Resources are labelled and ownership checked before reuse or removal.
+
+The gateway independently distinguishes the API and Studio hostnames. Studio
+and metadata routes are absent on the API host. Studio requires a high-entropy
+Basic-auth password over HTTPS; application keys cannot bypass this login.
+Gateway request logging is disabled to avoid storing credentials from request
+URLs or invalid configuration diagnostics. Auth redirects and signup settings
+are explicit; autoconfirmation is disabled. Application table RLS and grants
+remain the application author's responsibility.
+
+Secrets are encrypted in Shelter's database. Credential retrieval requires a
+browser session, CSRF validation and password reauthentication. Cold snapshots
+are encrypted and authenticated, and restore authenticates them before changing
+runtime resources. Previous volume generations are retained. This is a single
+host, not a hostile-tenant sandbox or high-availability database service. Read
+[the Supabase operations guide](docs/SUPABASE.md) before enabling public traffic.
+
+Uploaded ZIPs are revalidated entry by entry on the worker while they are streamed
+into an empty workspace. Extraction rejects links, special files, path escapes,
+entry collisions and excessive expansion; it never replaces an existing file.
+Application and database data volumes are not automatically encrypted at rest.
+Use host disk encryption when your threat model requires it.
+
+Global SMTP credentials are encrypted at rest and never returned by settings APIs.
+Changing a global server requires fresh TLS/authentication verification before an
+explicit apply operation updates its consumers. Individual Supabase SMTP overrides
+remain isolated from global changes. New SMTP settings require implicit TLS on
+port 465 with certificate verification. Connection tests send no mail; the optional
+fixed-content test message can only target the signed-in administrator's email.
+SMTP settings mutations require an administrator session and CSRF protection.
+
+Managed Supabase Studio supports a browser-bound, one-use handoff from an
+authenticated Shelter session. Studio session cookies are host-only, Secure,
+HttpOnly and SameSite=Strict, and every request revalidates the parent session,
+instance state and credential revision. Logout revokes the linked Studio
+session. Only Traefik may request the internal Basic authorization header; the
+gateway still enforces authentication and same-origin mutations. Handoff tickets
+expire after 60 seconds and are stored only as hashes. Manual password login
+remains a separate fallback with the normal Studio password-rotation lifecycle.
+
+Managed Edge Functions run in a pinned, resource-limited container on their own
+Supabase instance network. The runtime and Studio mount function files read-only;
+only the worker's short-lived deployment helper writes them. The main router is
+in a separate read-only volume and verifies HS256 signatures and token expiry
+before dispatch. Function source is trusted administrator code with that
+instance's service credentials; it must enforce application-specific access
+rules itself. Deployments require a browser session and CSRF validation. Queued
+source is encrypted and removed from the queue after completion. No function or
+deployment helper receives the Docker socket or a public host port.
+
+
+Managed Supabase function source, version history, invocation payloads and results,
+and external backup credentials are encrypted with APP_SECRET. Code and test
+routes require a Shelter browser session; mutations require CSRF. Function test
+requests use the anon key or no token, and are never automatically replayed after
+worker interruption. Candidate module validation executes administrator-provided
+code with the instance's existing service authority. External backup uploads use
+public HTTPS destinations with private-address rejection at connection time,
+bounded multipart uploads and verified S3 checksums. Recovery tests use isolated
+volume generations and do not attach their gateway to public routing.
+
 ### Administrator two-factor authentication
 
 Administrators can enroll an authenticator under Settings → Security. Enrollment

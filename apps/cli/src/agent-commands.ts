@@ -14,6 +14,11 @@ interface Command {
 // Paths and scopes mirror the token-authenticated server routes. Bodies retain
 // the server's schema so new configuration fields do not require CLI flags.
 export const agentCommands: Record<string, Command> = {
+  "supabase-list": { method: "GET", path: "/api/supabase", scope: "projects:read", description: "List managed Supabase instances without secrets" },
+  "supabase-instance": { method: "GET", path: "/api/supabase/{instanceId}", scope: "projects:read", description: "Read Supabase status, jobs and backup metadata" },
+  "supabase-create": { method: "POST", path: "/api/supabase", body: true, scope: "projects:write + domains:write", description: "Install a pinned Supabase stack" },
+  "supabase-action": { method: "POST", path: "/api/supabase/{instanceId}/actions", body: true, scope: "deployments:write", description: "Start, stop, back up, restore, rotate Studio password, or archive Supabase" },
+  "supabase-connect": { method: "POST", path: "/api/supabase/{instanceId}/connections", body: true, scope: "environment:write + projects:write", description: "Link the public API URL and anon key to an application" },
   overview: { method: "GET", path: "/api/overview", scope: "projects:read", description: "Inspect the installation overview" },
   schema: { method: "GET", path: "/api/openapi.json", scope: "none", description: "Read the installed server's OpenAPI contract" },
   analyze: { method: "POST", path: "/api/projects/analyze", body: true, scope: "projects:read", description: "Analyze bounded file facts supplied as JSON" },

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useI18n } from '@/i18n';
 import { Button, PageIntro } from '@/components/ui';
 
-export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding' | 'updates';
+export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding' | 'updates' | 'smtp';
 
 export function SettingsHeader({
   section,
@@ -32,6 +32,7 @@ export function SettingsHeader({
     return () => observer.disconnect();
   }, [section]);
   const copy = {
+    smtp: {title:t('Email & SMTP','E-Mail & SMTP'),description:t('Configure one secure mail server for this installation and its services.','Konfiguriere einen sicheren Mailserver für diese Installation und ihre Dienste.')},
     updates: { title: t('Updates', 'Updates'), description: t('Check your installed version and update Shelter from a verified release.', 'Prüfe deine installierte Version und aktualisiere Shelter mit einem verifizierten Release.') },
     branding: { title: t('Branding', 'Branding'), description: t('Make this platform your own. Preview, save and transfer your brand identity.', 'Gestalte diese Plattform mit deiner Marke. Identität vorschauen, speichern und übertragen.') },
     cloudflare: {
@@ -68,6 +69,7 @@ export function SettingsHeader({
     { key: 'branding' as const, to: '/settings/branding', label: t('Branding', 'Branding') },
     { key: 'cloudflare' as const, to: '/settings/cloudflare', label: 'Cloudflare & Routing' },
     { key: 'github' as const, to: '/settings/github', label: 'GitHub' },
+    { key: 'smtp' as const, to: '/settings/smtp', label: t('Email & SMTP', 'E-Mail & SMTP') },
     { key: 'api' as const, to: '/settings/api', label: 'API & CLI' },
     { key: 'security' as const, to: '/settings/security', label: t('Security', 'Sicherheit') },
     { key: 'updates' as const, to: '/settings/updates', label: t('Updates', 'Updates') },

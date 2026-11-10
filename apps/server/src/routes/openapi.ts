@@ -1,3 +1,5 @@
+import { smtpOpenApiPaths } from "../services/smtp-openapi.js";
+import { supabaseOpenApiPaths } from "../services/supabase-openapi.js";
 import type { Database } from "../lib/database.js";
 import { getBranding } from "../services/branding.js";
 import type { FastifyInstance } from "fastify";
@@ -43,9 +45,12 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
         { name: "Deployments" },
         { name: "Previews" },
         { name: "Uploads" },
-        { name: "Domains" }
+        { name: "Domains" },
+        { name: "Supabase" }
       ],
       paths: {
+        ...supabaseOpenApiPaths,
+        ...smtpOpenApiPaths,
         "/api/healthz": {
           get: { tags: ["System"], summary: `Check ${name} and worker health`, responses: { "200": { description: "Health state" } } }
         },
