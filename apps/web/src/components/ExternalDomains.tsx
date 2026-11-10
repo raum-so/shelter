@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, Circle, Clock3
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
+import { api, ApiError } from '@/api/client';
 import { currentLocale, useI18n } from '@/i18n';
 import type { Domain, ExternalDomainDetails } from '@/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
@@ -28,6 +28,11 @@ function Failure({ error, retry }: { error: unknown; retry?: () => void }) {
     <AlertDescription>{error instanceof Error ? error.message : t('Check the connection and try again.', 'Prüfe die Verbindung und versuche es erneut.')}</AlertDescription>
     {retry && <Button variant="outline" size="sm" className="col-start-2 mt-2 w-fit" onClick={retry}>{t('Try again', 'Erneut versuchen')}</Button>}
   </Alert>;
+}
+
+function domainCheckIsRunning(error: unknown): boolean {
+  return error instanceof ApiError && error.details !== null && typeof error.details === 'object'
+    && 'code' in error.details && error.details.code === 'DOMAIN_MUTATION_ACTIVE';
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -203,6 +208,10 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
             : t('Domain and HTTPS are ready. The project needs an active deployment.', 'Domain und HTTPS sind bereit. Das Projekt benötigt ein aktives Deployment.');
       toast.info(t('Check completed', 'Prüfung abgeschlossen'), { description: waiting });
     }
+  }, onError: error => {
+    if (domainCheckIsRunning(error)) toast.info(t('A domain check is already running', 'Eine Domainprüfung läuft bereits'), {
+      description: t('Shelter will refresh the status automatically. Wait for the current check to finish.', 'Shelter aktualisiert den Status automatisch. Warte, bis die laufende Prüfung abgeschlossen ist.'),
+    });
   }, onSettled: () => {
     void queryClient.invalidateQueries({ queryKey: ['project-domains', projectId] });
     void queryClient.invalidateQueries({ queryKey: ['project', projectId] });
@@ -239,7 +248,7 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
       </Button>
     </div>
     {detail.error && <Alert variant={domain.status === 'active' ? 'default' : 'destructive'}><Info /><AlertTitle>{domain.status === 'active' ? t('Connection active; last check delayed', 'Verbindung aktiv; letzte Prüfung verzögert') : t('The connection needs attention', 'Die Verbindung muss geprüft werden')}</AlertTitle><AlertDescription>{detail.error}</AlertDescription></Alert>}
-    {verify.isError && <Failure error={verify.error} />}
+    {verify.isError && !domainCheckIsRunning(verify.error) && <Failure error={verify.error} />}
     {domain.status === 'active' ? <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">{t('Show DNS instructions', 'DNS-Anleitung anzeigen')}</summary><div className="mt-4"><DnsInstructions domain={domain} /></div></details> : <DnsInstructions domain={domain} />}
   </div>;
 }
