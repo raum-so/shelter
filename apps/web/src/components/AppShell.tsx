@@ -44,14 +44,14 @@ import {
   SheetTrigger,
 } from './ui/sheet';
 import { cn } from '@/lib/utils';
-import { BRAND_NAME, BRAND_CLAIM } from '@/lib/brand';
+import { BRAND_NAME } from '@/lib/brand';
 import { useI18n } from '@/i18n';
 
 function RouteFallback() {
   const { t } = useI18n();
   return (
     <div className="grid gap-6" aria-label={t('Loading page', 'Seite wird geladen')} role="status">
-      <div className="space-y-3 border-b pb-7">
+      <div className="flex flex-col gap-3 border-b pb-7">
         <Skeleton className="h-5 w-28" />
         <Skeleton className="h-11 w-full max-w-md" />
         <Skeleton className="h-5 w-full max-w-xl" />
@@ -78,7 +78,7 @@ export function AppShell({ session }: { session: Session }) {
     { to: '/projects', label: t('Projects', 'Projekte'), icon: FolderKanban, end: false },
     { to: '/setup', label: t('Setup guide', 'Einrichtung'), icon: CheckIcon, end: false },
     { to: '/server', label: t('Server', 'Server'), icon: Gauge, end: true },
-    { to: '/settings/cloudflare', label: t('Settings', 'Einstellungen'), icon: Settings2, end: false },
+    { to: '/settings', label: t('Settings', 'Einstellungen'), icon: Settings2, end: false },
   ], [t]);
   const overview = useQuery({
     queryKey: ['overview'],
@@ -100,6 +100,7 @@ export function AppShell({ session }: { session: Session }) {
 
   const routeTitle = useMemo(() => {
     if (location.pathname === '/' || location.pathname === '/dashboard') return t('Dashboard', 'Dashboard');
+    if (location.pathname === '/services') return t('Services', 'Dienste');
     if (location.pathname === '/projects') return t('Projects', 'Projekte');
     if (location.pathname === '/projects/new') return t('New project', 'Neues Projekt');
     // Dynamic project screens own their title because they can include the
@@ -109,6 +110,7 @@ export function AppShell({ session }: { session: Session }) {
     if (location.pathname.startsWith('/setup')) return t('Setup guide', 'Einrichtung');
     if (location.pathname === '/settings/cloudflare') return t('Cloudflare & routing', 'Cloudflare & Routing');
     if (location.pathname === '/settings/github') return 'GitHub';
+    if (location.pathname === '/settings/smtp') return t('Email & SMTP', 'E-Mail & SMTP');
     if (location.pathname === '/settings/api') return 'API & CLI';
     if (location.pathname === '/settings/branding') return t('Branding', 'Branding');
     if (location.pathname === '/settings/updates') return t('Updates', 'Updates');
@@ -135,39 +137,19 @@ export function AppShell({ session }: { session: Session }) {
 
   const renderSidebarContent = (mobile = false) => (
     <div className="workspace-sidebar flex h-full min-h-full flex-col overflow-y-auto text-sidebar-foreground">
-      <div className="flex h-24 shrink-0 items-center px-6">
+      <div className="flex h-16 shrink-0 items-center px-5">
         <Brand inverse />
       </div>
 
-      <div className="shrink-0 px-4 pb-2">
-        <NavLink
-          to="/server"
-          onClick={() => mobile && setMenuOpen(false)}
-          className="workspace-node flex items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50"
-          aria-label={t(
-            '{status}. Open server metrics',
-            '{status}. Servermetriken öffnen',
-            { status: nodeStatus.label },
-          )}
-        >
-          <Server className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className={cn('size-1.5 shrink-0 rounded-full', nodeStatus.dot, workerOnline && 'status-pulse')} aria-hidden="true" />
-              <strong className="truncate text-xs font-medium">{nodeStatus.label}</strong>
-            </div>
-            <span className="block truncate text-xs text-muted-foreground">{nodeStatus.detail}</span>
-          </div>
-          {(overview.data?.cloudflare?.connected || overview.data?.system?.tunnelConfigured) && (
-            <Cloud className="size-4 text-muted-foreground" aria-label={t('Cloudflare connected', 'Cloudflare verbunden')} />
-          )}
-        </NavLink>
+      <div className="shrink-0 px-3 pb-2">
+        <Button asChild variant="ghost" className="w-full justify-start" size="lg">
+          <NavLink to="/projects/new" onClick={() => mobile && setMenuOpen(false)}>
+            <Plus data-icon="inline-start" aria-hidden="true" />{t('New project', 'Neues Projekt')}
+          </NavLink>
+        </Button>
       </div>
 
-      <nav className="grid shrink-0 gap-1.5 px-4 py-5" aria-label={t('Main navigation', 'Hauptnavigation')}>
-        <p className="workspace-section-label">
-          {t('Workspace', 'Arbeitsbereich')}
-        </p>
+      <nav className="grid shrink-0 gap-1 px-3 py-2" aria-label={t('Main navigation', 'Hauptnavigation')}>
         {navigation.map(({ to, label: itemLabel, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -175,7 +157,6 @@ export function AppShell({ session }: { session: Session }) {
             end={end}
             ref={mobile && to === '/dashboard' ? mobileNavFirstRef : undefined}
             onClick={() => mobile && setMenuOpen(false)}
-            aria-current={to.startsWith('/settings') && location.pathname.startsWith('/settings') ? 'page' : undefined}
             className="workspace-nav-link"
           >
             <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -188,16 +169,11 @@ export function AppShell({ session }: { session: Session }) {
       </nav>
 
       <div className="mt-auto shrink-0 px-4 pb-4">
-        <div className="workspace-node mb-5 flex flex-col gap-3 p-4">
-          <FolderKanban className="size-5 text-sidebar-accent-foreground" aria-hidden="true" />
-          <p className="text-sm font-medium">{BRAND_CLAIM}</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">{t('From Git or a folder to your own server.', 'Von Git oder einem Ordner auf deinen eigenen Server.')}</p>
-          <Button asChild className="w-full" size="lg">
-            <NavLink to="/projects/new" onClick={() => mobile && setMenuOpen(false)}>
-              <Plus data-icon="inline-start" aria-hidden="true" /> {t('New project', 'Neues Projekt')}
-            </NavLink>
-          </Button>
-        </div>
+        <NavLink to="/server" onClick={() => mobile && setMenuOpen(false)} className="mb-3 flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring" aria-label={t('{status}. Open server metrics', '{status}. Servermetriken öffnen', { status: nodeStatus.label })}>
+          <span className={cn('size-1.5 shrink-0 rounded-full', nodeStatus.dot)} aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{nodeStatus.label}</span>
+          {(overview.data?.cloudflare?.connected || overview.data?.system?.tunnelConfigured) && <Cloud className="size-3.5" aria-label={t('Cloudflare connected', 'Cloudflare verbunden')} />}
+        </NavLink>
 
         <Separator className="mb-3 bg-sidebar-border" />
 
@@ -313,9 +289,9 @@ export function AppShell({ session }: { session: Session }) {
       <main
         id="main-content"
         tabIndex={-1}
-        className="min-h-[calc(100svh-3.5rem)] px-4 py-6 outline-none sm:px-6 sm:py-8 lg:ml-60 lg:min-h-svh lg:px-7"
+        className="min-h-[calc(100svh-3.5rem)] px-4 py-6 outline-none sm:px-6 sm:py-8 lg:ml-60 lg:min-h-svh lg:px-10 lg:py-10"
       >
-        <div className="mx-auto w-full max-w-[88rem]">
+        <div className="mx-auto w-full max-w-[80rem]">
           <Suspense fallback={<RouteFallback />}>
             <Outlet />
           </Suspense>

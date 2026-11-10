@@ -929,7 +929,7 @@ export function NewProjectPage() {
   }
 
   return (
-    <div className="space-y-7 pb-28 xl:pb-0">
+    <div className="flex min-w-0 flex-col gap-6 pb-28 xl:pb-0">
       <NavigationGuard
         when={navigationProtected}
         locked={createProject.isPending}
@@ -939,18 +939,8 @@ export function NewProjectPage() {
           : t('Leaving discards the project data and selected files you entered.', 'Beim Verlassen gehen deine eingegebenen Projektdaten und ausgewählten Dateien verloren.')}
       />
 
-      {createProject.isPending ? (
-        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" disabled>
-          <ArrowLeft aria-hidden="true" /> {t('Back to overview', 'Zur Übersicht')}
-        </Button>
-      ) : (
-        <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground hover:text-foreground">
-          <Link to="/projects"><ArrowLeft aria-hidden="true" /> {t('Back to project list', 'Zur Projektliste')}</Link>
-        </Button>
-      )}
-
       <PageIntro
-        eyebrow={t('New project', 'Neues Projekt')}
+        eyebrow={createProject.isPending ? t('New project', 'Neues Projekt') : <Link to="/projects" className="inline-flex items-center gap-1.5 hover:text-foreground"><ArrowLeft className="size-3.5" aria-hidden="true" />{t('Back to project list', 'Zur Projektliste')}</Link>}
         title={t('Create project', 'Projekt anlegen')}
         description={t('Choose a source, name the project, and start the first build.', 'Quelle auswählen, Projekt benennen und den ersten Build starten.')}
       />
@@ -1004,7 +994,7 @@ export function NewProjectPage() {
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="git" className="mt-5 space-y-4">
+                <TabsContent value="git" className="flex flex-col mt-5 gap-4">
                   <div className="flex w-full gap-1 rounded-lg bg-muted p-1 sm:w-fit" aria-label={t('Choose Git source', 'Git-Quelle auswählen')}>
                     <Button
                       type="button"
@@ -1220,7 +1210,7 @@ export function NewProjectPage() {
                   )}
                 </TabsContent>
 
-                <TabsContent value="upload" className="mt-5 space-y-4">
+                <TabsContent value="upload" className="flex flex-col mt-5 gap-4">
                   <RadioGroup
                     value={uploadKind}
                     onValueChange={(value) => changeUploadKind(value as UploadKind)}
@@ -1282,7 +1272,7 @@ export function NewProjectPage() {
                   />
 
                   {hasUpload ? (
-                    <div className="space-y-3">
+                    <div className="flex flex-col gap-3">
                       <div className="flex min-w-0 items-center gap-3 rounded-md border p-3.5">
                         <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
                           <Archive className="size-5" aria-hidden="true" />
@@ -1545,7 +1535,7 @@ export function NewProjectPage() {
                   </span>
                 </AccordionTrigger>
                 <AccordionContent className="pt-6 pb-0">
-                  <div className="space-y-4">
+                  <div className="flex flex-col gap-4">
                     {environment.length > 0 ? (
                       <div>
                         <div className="divide-y">
@@ -1665,7 +1655,7 @@ export function NewProjectPage() {
         </div>
 
         <aside className="hidden min-w-0 xl:sticky xl:top-6 xl:block">
-          <Card className="gap-0 py-0 shadow-sm">
+          <Card className="gap-0 py-0">
             <CardHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b px-4 py-5">
               <div className="min-w-0">
                 <CardTitle><h2 className="text-base">{t('Deploy', 'Bereitstellen')}</h2></CardTitle>
@@ -1674,8 +1664,8 @@ export function NewProjectPage() {
               <Badge variant="outline" className="shrink-0">{actionStatus}</Badge>
             </CardHeader>
 
-            <CardContent className="space-y-5 px-4 py-5">
-              <div className="space-y-1.5">
+            <CardContent className="flex flex-col gap-5 px-4 py-5">
+              <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium text-muted-foreground">{t('Project', 'Projekt')}</span>
                 <p className={cn(
                   'break-words text-sm font-semibold leading-relaxed',
@@ -1685,7 +1675,7 @@ export function NewProjectPage() {
                 </p>
               </div>
 
-              <div className="space-y-3 border-y py-4">
+              <div className="flex flex-col gap-3 border-y py-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs font-medium text-muted-foreground">{t('Source', 'Quelle')}</span>
                   <Badge variant="secondary">{sourceMode === 'git' ? gitSourceMode === 'github' ? 'GitHub' : 'Git' : uploadKind === 'zip' ? 'ZIP' : t('Folder', 'Ordner')}</Badge>
@@ -1694,7 +1684,7 @@ export function NewProjectPage() {
               </div>
 
               {reviewOverrides.length > 0 && (
-                <dl className="space-y-3 text-xs">
+                <dl className="flex flex-col gap-3 text-xs">
                   {reviewOverrides.map((item) => (
                     <div key={item.label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3">
                       <dt className="text-muted-foreground">{item.label}</dt>
@@ -1707,7 +1697,7 @@ export function NewProjectPage() {
               {incompleteItems.length > 0 && (
                 <div className="rounded-lg border bg-muted/30 p-3">
                   <strong className="text-sm font-medium">{t('Still needed', 'Noch offen')}</strong>
-                  <ul className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                  <ul className="flex flex-col mt-2 gap-1.5 text-xs text-muted-foreground">
                     {incompleteItems.map((item) => <li key={item}>• {item}</li>)}
                   </ul>
                 </div>
@@ -1718,7 +1708,7 @@ export function NewProjectPage() {
                   <TriangleAlert aria-hidden="true" />
                   <AlertTitle>{t('Please review', 'Bitte noch prüfen')}</AlertTitle>
                   <AlertDescription>
-                    <ul className="mt-1 list-disc space-y-1 pl-4 text-left">
+                    <ul className="flex flex-col mt-1 list-disc gap-1 pl-4 text-left">
                       {validationMessages.map((message) => <li key={message}>{message}</li>)}
                     </ul>
                   </AlertDescription>
@@ -1773,8 +1763,8 @@ export function NewProjectPage() {
             role="status"
             aria-live="polite"
           >
-            <Card className="gap-0 py-0 shadow-lg">
-              <CardContent className="space-y-3 p-4">
+            <Card className="gap-0 py-0">
+              <CardContent className="flex flex-col gap-3 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <strong className="flex items-center gap-2 text-sm">

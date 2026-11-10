@@ -694,7 +694,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     const organizationUpgradeInstallUrl = trustedGitHubAppInstallationUrl(github?.previewCapability?.upgradeInstallUrl);
 
     return (
-      <div className="flex flex-col gap-8 sm:gap-10">
+      <div className="flex min-w-0 flex-col gap-6">
         <SettingsHeader
           section="github"
           status={<StatusBadge status={githubSettings.isLoading ? 'pending' : connected ? 'connected' : github?.configured ? 'ready' : 'offline'} />}
@@ -1093,7 +1093,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
   return (
     <>
       {unsavedChangesGuard}
-      <div className="flex flex-col gap-8 sm:gap-10">
+      <div className="flex min-w-0 flex-col gap-6">
         <SettingsHeader
         section="cloudflare"
         status={<StatusBadge status={oauthPending ? 'pending' : settings.data?.connected ? 'connected' : configured ? 'ready' : 'offline'} />}

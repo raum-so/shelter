@@ -82,7 +82,7 @@ export function UploadProjectSourcePage() {
   const supportsStaticBasePath = project.buildType !== 'node' && project.buildType !== 'dockerfile';
 
   return (
-    <div className="grid min-w-0 gap-6 sm:gap-7">
+    <div className="grid min-w-0 gap-6">
       <NavigationGuard
         when={uploadPending || uploadDirty}
         locked={uploadPending}

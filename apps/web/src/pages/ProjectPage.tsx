@@ -766,7 +766,7 @@ export function ProjectPage() {
     { id: 'settings', label: t('Settings', 'Einstellungen') },
   ];
   return (
-    <div className="grid min-w-0 gap-6 sm:gap-7">
+    <div className="grid min-w-0 gap-6">
       <NavigationGuard
         when={environmentDirty || settingsDirty || githubSettingsDirty || previewSettingsDirty}
         title={t('Unsaved changes', 'Ungespeicherte Änderungen')}
@@ -781,12 +781,8 @@ export function ProjectPage() {
               : t('Leaving now will discard your unsaved project configuration.', 'Beim Verlassen geht deine noch nicht gespeicherte Projektkonfiguration verloren.')}
       />
 
-      <Button asChild variant="ghost" className="-ml-2 w-fit text-muted-foreground">
-        <Link to="/projects"><ArrowLeft /> {t('All projects', 'Alle Projekte')}</Link>
-      </Button>
-
       <PageIntro
-        eyebrow={<StatusBadge status={project.status} />}
+        eyebrow={<Link to="/projects" className="inline-flex items-center gap-1.5 hover:text-foreground"><ArrowLeft className="size-3.5" aria-hidden="true" />{t('All projects', 'Alle Projekte')}</Link>}
         title={project.name}
         description={project.sourceType === 'git' ? (
           <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -803,6 +799,7 @@ export function ProjectPage() {
           : t('Directly uploaded project', 'Direkt hochgeladenes Projekt')}
         actions={
           <>
+            <StatusBadge status={project.status} />
             {primaryUrl && !deletionFailed && (
               <Button asChild variant="outline">
                 <a href={primaryUrl} target="_blank" rel="noreferrer">{fileStorage ? t('Open storage', 'Ablage öffnen') : t('Open website', 'Website öffnen')} <ExternalLink /></a>

@@ -6,98 +6,98 @@
 
 :root {
   color-scheme: light;
-  --background: #f5f7fc;
-  --foreground: #17243b;
+  --background: #ffffff;
+  --foreground: #202020;
   --card: #ffffff;
-  --card-foreground: #17243b;
+  --card-foreground: #202020;
   --popover: #ffffff;
-  --popover-foreground: #17243b;
-  --primary: #6652df;
+  --popover-foreground: #202020;
+  --primary: #202020;
   --primary-foreground: #ffffff;
-  --secondary: #eaf0f9;
-  --secondary-foreground: #263753;
-  --muted: #edf1f8;
-  --muted-foreground: #5e6d84;
-  --accent: #eae6fc;
-  --accent-foreground: #5140b5;
-  --destructive: #bd3654;
-  --border: #dce3ef;
-  --input: #cbd5e5;
-  --ring: #7763ff;
-  --success: #137d65;
+  --secondary: #f3f3f3;
+  --secondary-foreground: #303030;
+  --muted: #f5f5f5;
+  --muted-foreground: #6b6b6b;
+  --accent: #ededed;
+  --accent-foreground: #202020;
+  --destructive: #c53043;
+  --border: #e7e7e7;
+  --input: #d6d6d6;
+  --ring: #737373;
+  --success: #16805d;
   --success-foreground: #ffffff;
-  --warning: #94620e;
+  --warning: #926312;
   --warning-foreground: #ffffff;
-  --info: #2864a0;
+  --info: #356dc0;
   --info-foreground: #ffffff;
   --brand: oklch(0.397 0.108 150.5);
   --brand-foreground: oklch(0.968 0.035 139.4);
-  --terminal: #040e19;
-  --terminal-foreground: #f3f5fc;
-  --chart-1: #7763ff;
-  --chart-2: #466990;
-  --chart-3: #137d65;
-  --chart-4: #94620e;
-  --chart-5: #b64487;
-  --radius: 0.8rem;
-  --sidebar: #eef2fa;
-  --sidebar-foreground: #17243b;
-  --sidebar-primary: #6652df;
+  --terminal: #151515;
+  --terminal-foreground: #ededed;
+  --chart-1: #555555;
+  --chart-2: #8c8c8c;
+  --chart-3: #16805d;
+  --chart-4: #926312;
+  --chart-5: #356dc0;
+  --radius: 0.5rem;
+  --sidebar: #f8f8f8;
+  --sidebar-foreground: #202020;
+  --sidebar-primary: #202020;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e3ddfa;
-  --sidebar-accent-foreground: #5140b5;
-  --sidebar-border: #dce3ef;
-  --sidebar-ring: #7763ff;
+  --sidebar-accent: #ebebeb;
+  --sidebar-accent-foreground: #202020;
+  --sidebar-border: #e7e7e7;
+  --sidebar-ring: #737373;
 }
 
 .dark {
   color-scheme: dark;
-  --background: #061321;
-  --foreground: #f3f5fc;
-  --card: #0a1c2e;
-  --card-foreground: #f3f5fc;
-  --popover: #102236;
-  --popover-foreground: #f3f5fc;
-  --primary: #705be8;
-  --primary-foreground: #ffffff;
-  --secondary: #1c2b43;
-  --secondary-foreground: #f3f5fc;
-  --muted: #15283e;
-  --muted-foreground: #9fadc3;
-  --accent: #20334c;
-  --accent-foreground: #f3f5fc;
-  --destructive: #ff7992;
-  --border: #213247;
-  --input: #2d4059;
-  --ring: #a899ff;
-  --success: #47d7ae;
-  --success-foreground: #040e19;
-  --warning: #edbe6e;
-  --warning-foreground: #040e19;
-  --info: #85b9f3;
-  --info-foreground: #040e19;
+  --background: #111111;
+  --foreground: #ededed;
+  --card: #151515;
+  --card-foreground: #ededed;
+  --popover: #1c1c1c;
+  --popover-foreground: #ededed;
+  --primary: #ededed;
+  --primary-foreground: #171717;
+  --secondary: #242424;
+  --secondary-foreground: #ededed;
+  --muted: #202020;
+  --muted-foreground: #a1a1a1;
+  --accent: #292929;
+  --accent-foreground: #ededed;
+  --destructive: #ff8792;
+  --border: #2c2c2c;
+  --input: #424242;
+  --ring: #a1a1a1;
+  --success: #55cfa0;
+  --success-foreground: #111111;
+  --warning: #e7b858;
+  --warning-foreground: #111111;
+  --info: #8ab9f2;
+  --info-foreground: #111111;
   --brand: oklch(0.735 0.158 139.6);
   --brand-foreground: oklch(0.185 0.04 148.4);
-  --terminal: #040e19;
-  --terminal-foreground: #f3f5fc;
-  --chart-1: #9580ff;
-  --chart-2: #729bc5;
-  --chart-3: #47d7ae;
-  --chart-4: #edbe6e;
-  --chart-5: #ed85b8;
-  --sidebar: #040e19;
-  --sidebar-foreground: #f3f5fc;
-  --sidebar-primary: #705be8;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #211f42;
-  --sidebar-accent-foreground: #c1b6ff;
-  --sidebar-border: #213247;
-  --sidebar-ring: #a899ff;
+  --terminal: #0c0c0c;
+  --terminal-foreground: #ededed;
+  --chart-1: #d4d4d4;
+  --chart-2: #888888;
+  --chart-3: #55cfa0;
+  --chart-4: #e7b858;
+  --chart-5: #8ab9f2;
+  --sidebar: #171717;
+  --sidebar-foreground: #ededed;
+  --sidebar-primary: #ededed;
+  --sidebar-primary-foreground: #171717;
+  --sidebar-accent: #292929;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #2c2c2c;
+  --sidebar-ring: #a1a1a1;
 }
 
 @theme inline {
-  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-heading: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -161,7 +161,8 @@
     @apply min-h-svh bg-background text-foreground;
     margin: 0;
     font-size: 14px;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.01em;
+    line-height: 1.5;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
   }
@@ -194,24 +195,23 @@
   }
 }
 
-/* The workspace surfaces share the reference's navy/indigo hierarchy. */
+/* Neutral workspace surfaces keep attention on content and operational status. */
 @layer components {
   .workspace-shell {
-    background: radial-gradient(ellipse at 85% 0%, color-mix(in srgb, var(--primary) 5%, transparent), transparent 43%), var(--background);
+    background: var(--background);
   }
 
   .workspace-sidebar {
-    background: linear-gradient(145deg, color-mix(in srgb, var(--sidebar) 92%, var(--card)), var(--sidebar) 70%);
+    background: var(--sidebar);
   }
 
   .workspace-nav-link {
     display: flex;
-    min-height: 44px;
+    min-height: 38px;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-lg);
     color: var(--muted-foreground);
     font-size: 13px;
     font-weight: 500;
@@ -226,8 +226,8 @@
   }
 
   .workspace-nav-link[aria-current="page"] {
-    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-    background: linear-gradient(110deg, color-mix(in srgb, var(--primary) 12%, var(--sidebar-accent)), var(--sidebar-accent));
+    background: var(--sidebar-accent);
+    font-weight: 600;
   }
 
   .workspace-nav-link:focus-visible {
@@ -240,19 +240,19 @@
     color: var(--muted-foreground);
     font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   .workspace-node {
     border: 1px solid var(--sidebar-border);
     border-radius: var(--radius-lg);
-    background: color-mix(in srgb, var(--card) 65%, transparent);
+    background: transparent;
   }
 
   .metric-card {
-    --metric-tone: var(--chart-1);
-    background: linear-gradient(125deg, color-mix(in srgb, var(--metric-tone) 3%, var(--card)), var(--card));
+    --metric-tone: var(--muted-foreground);
+    background: var(--card);
   }
 
   .metric-card[data-tone="success"] { --metric-tone: var(--success); }
@@ -265,10 +265,10 @@
     place-items: center;
     width: 36px;
     height: 36px;
-    border: 1px solid color-mix(in srgb, var(--metric-tone) 22%, transparent);
+    border: 0;
     border-radius: var(--radius-md);
     color: var(--metric-tone);
-    background: color-mix(in srgb, var(--metric-tone) 13%, transparent);
+    background: var(--muted);
   }
 }
 

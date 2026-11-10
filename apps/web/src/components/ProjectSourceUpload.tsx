@@ -489,10 +489,10 @@ export function ProjectSourceUpload({
         />
 
         {analysisDifferences.length > 0 && (
-          <Alert className="border-amber-500/25 bg-amber-500/[0.035]" data-testid="replacement-analysis-differences">
+          <Alert className="border-warning/25 bg-warning/5" data-testid="replacement-analysis-differences">
             <GitCompareArrows aria-hidden="true" />
             <AlertTitle>{t('Source differs from the saved project settings', 'Quelle weicht von den gespeicherten Projekteinstellungen ab')}</AlertTitle>
-            <AlertDescription className="space-y-3">
+            <AlertDescription className="flex flex-col gap-3">
               <p>{t(
                 'You can still upload this version. Shelter keeps the saved settings and does not change them automatically.',
                 'Du kannst diese Version trotzdem hochladen. Shelter behält die gespeicherten Einstellungen bei und ändert sie nicht automatisch.',
@@ -522,7 +522,7 @@ export function ProjectSourceUpload({
           <Alert className="border-border bg-muted/20" data-testid="replacement-analysis-environment-keys">
             <KeyRound aria-hidden="true" />
             <AlertTitle>{t('Environment keys are not configured yet', 'Umgebungsvariablen sind noch nicht konfiguriert')}</AlertTitle>
-            <AlertDescription className="space-y-3">
+            <AlertDescription className="flex flex-col gap-3">
               <p>{t(
                 'The selected source declares these keys. Shelter does not create variables or change existing values during this upload.',
                 'Die ausgewählte Quelle deklariert diese Keys. Shelter legt bei diesem Upload keine Variablen an und ändert keine bestehenden Werte.',

@@ -63,7 +63,7 @@ function confidencePercent(confidence: number) {
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="flex flex-col min-w-0 gap-1">
       <dt className="text-[0.68rem] font-medium tracking-wide text-muted-foreground uppercase">{label}</dt>
       <dd className={cn('truncate text-sm font-medium', mono && 'font-mono text-xs')} title={value}>{value}</dd>
     </div>
@@ -115,7 +115,7 @@ export function ProjectAnalysisCard({
 
   if (status === 'error' || !analysis) {
     return (
-      <Alert className={cn('border-amber-500/25 bg-amber-500/[0.035]', className)} data-testid="project-analysis-error">
+      <Alert className={cn('border-warning/25 bg-warning/5', className)} data-testid="project-analysis-error">
         <CircleAlert aria-hidden="true" />
         <AlertTitle>{t('Automatic analysis is unavailable', 'Automatische Analyse nicht verfügbar')}</AlertTitle>
         <AlertDescription className="grid gap-3">
@@ -193,9 +193,9 @@ export function ProjectAnalysisCard({
         )}
       </CardHeader>
 
-      <CardContent className="space-y-5 px-4 py-4 sm:px-5 sm:py-5">
+      <CardContent className="flex flex-col gap-5 px-4 py-4 sm:px-5 sm:py-5">
         {analysis.applications.length > 1 && (
-          <div className="space-y-2.5">
+          <div className="flex flex-col gap-2.5">
             <div>
               <strong className="text-sm font-medium">{t('{count} applications found', '{count} Anwendungen gefunden', { count: analysis.applications.length })}</strong>
               <p className="mt-0.5 text-xs text-muted-foreground">{applicationSelectionDescription ?? (context === 'replacement'
@@ -246,7 +246,7 @@ export function ProjectAnalysisCard({
         </dl>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="min-w-0 space-y-2">
+          <div className="flex flex-col min-w-0 gap-2">
             <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <FolderTree className="size-3.5" aria-hidden="true" /> {t('Why Shelter recognized this', 'Warum Shelter das erkannt hat')}
             </div>
@@ -260,7 +260,7 @@ export function ProjectAnalysisCard({
             </div>
           </div>
 
-          <div className="min-w-0 space-y-2">
+          <div className="flex flex-col min-w-0 gap-2">
             <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <KeyRound className="size-3.5" aria-hidden="true" /> {t('Environment keys', 'Umgebungsvariablen')}
             </div>

@@ -146,7 +146,7 @@ export function GitHubRepositoryPicker({
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent className="gap-0 p-0 sm:max-w-3xl">
           <DialogHeader className="border-b px-5 py-4 pr-12">
             <DialogTitle>{t('Choose a GitHub repository', 'GitHub-Repository auswählen')}</DialogTitle>
             <DialogDescription>
@@ -157,7 +157,7 @@ export function GitHubRepositoryPicker({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid min-h-[28rem] md:grid-cols-[13.5rem_minmax(0,1fr)]">
+          <div className="grid min-h-0 md:min-h-[28rem] md:grid-cols-[13.5rem_minmax(0,1fr)]">
             <aside className="border-b bg-muted/20 p-2 md:border-r md:border-b-0" aria-label={t('GitHub accounts', 'GitHub-Accounts')}>
               <div className="flex gap-1 overflow-x-auto md:grid md:overflow-visible">
                 <button

@@ -61,7 +61,7 @@ Most deployment platforms trade ownership for convenience. Traditional self-host
 - **Operator-ready:** dashboard, deployment logs, rollbacks, project deletion, encrypted variables, resource limits, and per-project runtime observability.
 - **Automation-ready:** scoped, expiring personal access tokens, a documented HTTP API, OpenAPI, and an installable `shelter` CLI.
 - **Verifiable releases:** immutable GitHub Releases, digest-pinned multi-platform images, signed provenance, downloadable SBOMs, and a fail-closed release installer.
-- **Workspace design:** navy and indigo surfaces, locally served Plus Jakarta Sans, compact project and deployment cards, and matching light, dark, and system themes. Navigation adapts to mobile screens. Preview the [dark](docs/images/workspace-dark.png) and [light](docs/images/workspace-light.png) dashboard with illustrative data.
+- **Workspace design:** neutral surfaces, locally served Geist typography, restrained controls and borders, and matching light, dark, and system themes. Shared forms, tabs, dialogs, and status treatments follow the [workspace design guide](docs/DESIGN.md). Navigation adapts to mobile screens. Preview the [dark](docs/images/workspace-dark.png) and [light](docs/images/workspace-light.png) dashboard with illustrative data.
 - **Multilingual panel:** English and German with browser detection and a persistent language preference.
 
 ## Quick start
@@ -567,6 +567,8 @@ not supported. Imports cannot alter authentication, routing, or provider setting
 
 Concurrent edits fail with a conflict instead of overwriting another saved
 profile. **Restore defaults** restores the original identity after confirmation.
+An untouched saved legacy default follows the current neutral theme without rewriting stored settings. Custom identities and palettes keep their configured appearance.
+
 Branding lives in the existing SQLite data volume and is included in normal
 backups. Technical identifiers, API paths, CLI/package names, Docker resources,
 source licensing, and deployed application content remain unchanged.

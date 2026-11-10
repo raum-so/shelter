@@ -40,6 +40,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { useI18n } from '@/i18n';
 import type { ApiTokenSummary } from '@/types';
@@ -178,7 +179,7 @@ export function ApiSettingsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8 sm:gap-10">
+    <div className="flex min-w-0 flex-col gap-6">
       <NavigationGuard
         when={Boolean(revealed)}
         locked
@@ -299,22 +300,18 @@ export function ApiSettingsPage() {
             </CardContent>
           ) : (tokens.data?.length ?? 0) === 0 ? (
             <CardContent>
-              <div className="grid min-h-52 place-items-center rounded-lg border border-dashed bg-muted/20 px-6 text-center">
-                <div className="max-w-sm py-8">
-                  <span className="mx-auto mb-4 grid size-10 place-items-center rounded-lg border bg-background shadow-sm">
-                    <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </span>
-                  <h2 className="font-medium">{t('No access tokens yet', 'Noch keine Zugriffstoken')}</h2>
-                  <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-                    {t('Create one when you are ready to connect the CLI or an automation.', 'Erstelle einen Token, sobald du die CLI oder eine Automation verbinden möchtest.')}
-                  </p>
-                </div>
-              </div>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><KeyRound /></EmptyMedia>
+                  <EmptyTitle>{t('No access tokens yet', 'Noch keine Zugriffstoken')}</EmptyTitle>
+                  <EmptyDescription>{t('Create one when you are ready to connect the CLI or an automation.', 'Erstelle einen Token, sobald du die CLI oder eine Automation verbinden möchtest.')}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             </CardContent>
           ) : (
             <div className="divide-y">
               {tokens.data?.map((token) => (
-                <div key={token.id} className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <div key={token.id} className="grid gap-4 px-(--card-spacing) py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <strong className="truncate font-medium">{token.name}</strong>
@@ -379,8 +376,8 @@ export function ApiSettingsPage() {
               </div>
             </CardHeader>
             <CardContent className="grid gap-4">
-              <div className="overflow-hidden rounded-lg border bg-zinc-950 text-zinc-100 shadow-inner dark:bg-black">
-                <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-[11px] text-zinc-400">
+              <div className="overflow-hidden rounded-lg border bg-terminal text-terminal-foreground">
+                <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-[11px] text-terminal-foreground/65">
                   <span className="inline-flex items-center gap-1.5"><Braces className="size-3" /> shell</span>
                   <button type="button" className="rounded p-1 transition-colors hover:bg-white/10 hover:text-white" onClick={copyLoginCommand} aria-label={t('Copy command', 'Befehl kopieren')}>
                     <Copy className="size-3.5" aria-hidden="true" />
