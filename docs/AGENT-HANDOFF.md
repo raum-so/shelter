@@ -130,6 +130,9 @@ acceptance.
 - Commit coherent changes, run the complete check on the combined candidate,
   and use [the release flow](RELEASES.md). Promote through `dev`; never tag a
   feature branch or move an already published tag.
+- CI limits server and web test workers to two so hosted-runner CPU discovery
+  cannot create an unbounded memory load. Keep the full suites and isolation;
+  do not replace a hanging integration gate with skipped tests.
 - Update this handoff with evidence when the missing customer-domain acceptance
   is completed. Published versions are identified by immutable GitHub releases,
   their tags, and verified manifests, not by this document's intended version.
