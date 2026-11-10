@@ -5,6 +5,7 @@ import type { AppConfig } from "../config.js";
 import type { Database } from "../lib/database.js";
 import { badRequest, upstreamError } from "../lib/errors.js";
 import { decryptString, encryptString, hashToken, randomToken } from "../lib/security.js";
+import { missingCloudflareScopes, parseCloudflareScopes, requestedCloudflareScopes } from "../lib/cloudflare-scopes.js";
 
 const AUTHORIZE_URL = "https://dash.cloudflare.com/oauth2/auth";
 const TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
@@ -77,12 +78,6 @@ interface OAuthConfiguration {
   clientSecret: string;
   redirectUri: string;
   scopes: string[];
-}
-
-function normalizedScopes(value: string): string[] {
-  const scopes = [...new Set(value.split(/\s+/).map((scope) => scope.trim()).filter(Boolean))];
-  if (!scopes.includes("offline_access")) scopes.push("offline_access");
-  return scopes;
 }
 
 function codeChallenge(verifier: string): string {
@@ -187,8 +182,10 @@ export class CloudflareOAuthService {
       code_verifier: verifier
     });
     let tokenType: "Bearer";
+    const grantedScopes = parseCloudflareScopes(token.scope ?? flow.scopes);
     try {
       tokenType = bearerTokenType(token.token_type);
+      this.requireGrantedScopes(grantedScopes, flow.scopes);
     } catch (error) {
       await this.revokeTokens(token.access_token, token.refresh_token);
       throw error;
@@ -227,7 +224,7 @@ export class CloudflareOAuthService {
       refreshToken: token.refresh_token,
       tokenType,
       expiresAt: new Date(tokenExpiresAt).toISOString(),
-      scopes: normalizedScopes(token.scope || flow.scopes),
+      scopes: grantedScopes,
       clientId: flow.client_id,
       redirectUri: flow.redirect_uri,
       accounts
@@ -277,6 +274,7 @@ export class CloudflareOAuthService {
       );
     }
     const connection = this.parseConnection(pendingRow.encrypted_payload);
+    this.requireGrantedScopes(connection.scopes, this.config.CLOUDFLARE_OAUTH_SCOPES);
     this.database.setSetting("cloudflare.oauth_credentials", pendingRow.encrypted_payload);
     this.database.setSetting("cloudflare.auth_method", "oauth");
     this.database.deleteSetting("cloudflare.api_token");
@@ -311,7 +309,13 @@ export class CloudflareOAuthService {
     const connection = this.active();
     if (!connection) return false;
     if (this.database.getSetting("cloudflare.oauth_reconnect_required") === "1") return true;
+    if (this.missingScopes().length > 0) return true;
     return new Date(connection.expiresAt).getTime() <= Date.now() && !connection.refreshToken;
+  }
+
+  missingScopes(): string[] {
+    const connection = this.active();
+    return connection ? missingCloudflareScopes(connection.scopes, this.config.CLOUDFLARE_OAUTH_SCOPES) : [];
   }
 
   expiresAt(): string | null {
@@ -361,7 +365,7 @@ export class CloudflareOAuthService {
     })();
   }
 
-  resultUrl(result: "connected" | "error"): string {
+  resultUrl(result: "connected" | "error" | "permissions"): string {
     const redirectUri = this.redirectUri();
     if (!redirectUri) return `/settings?cloudflare=${result}`;
     const target = new URL("/settings", new URL(redirectUri).origin);
@@ -377,7 +381,7 @@ export class CloudflareOAuthService {
       clientId: this.config.CLOUDFLARE_OAUTH_CLIENT_ID as string,
       clientSecret: this.config.CLOUDFLARE_OAUTH_CLIENT_SECRET as string,
       redirectUri: this.config.CLOUDFLARE_OAUTH_REDIRECT_URI as string,
-      scopes: normalizedScopes(this.config.CLOUDFLARE_OAUTH_SCOPES)
+      scopes: requestedCloudflareScopes(this.config.CLOUDFLARE_OAUTH_SCOPES)
     };
   }
 
@@ -404,13 +408,17 @@ export class CloudflareOAuthService {
 
     let updated: CloudflareOAuthConnection;
     try {
+      const scopes = parseCloudflareScopes(token.scope ?? connection.scopes.join(" "));
+      if (scopes.length === 0) {
+        throw upstreamError("Cloudflare hat einen OAuth-Zugang ohne Rechte geliefert", "CLOUDFLARE_OAUTH_RESPONSE");
+      }
       updated = {
         ...connection,
         accessToken: token.access_token,
         refreshToken: token.refresh_token ?? connection.refreshToken,
         tokenType: bearerTokenType(token.token_type),
         expiresAt: new Date(Date.now() + token.expires_in * 1000).toISOString(),
-        scopes: normalizedScopes(token.scope || connection.scopes.join(" "))
+        scopes
       };
     } catch (error) {
       this.markReconnectRequiredIfCurrent(expectedCredentials);
@@ -475,6 +483,16 @@ export class CloudflareOAuthService {
       return TokenResponseSchema.parse(await response.json());
     } catch {
       throw upstreamError("Cloudflare hat eine ungültige OAuth-Antwort geliefert", "CLOUDFLARE_OAUTH_RESPONSE");
+    }
+  }
+
+  private requireGrantedScopes(scopes: string[], configured: string): void {
+    const missing = missingCloudflareScopes(scopes, configured);
+    if (missing.length) {
+      throw badRequest(
+        `Cloudflare hat nicht alle benötigten Rechte erteilt (${missing.join(", ")}). Erweitere die erlaubten Rechte des OAuth-Clients und verbinde Cloudflare erneut.`,
+        "CLOUDFLARE_OAUTH_SCOPE_MISSING"
+      );
     }
   }
 

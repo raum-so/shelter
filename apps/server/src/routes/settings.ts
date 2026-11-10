@@ -143,7 +143,7 @@ export function registerSettingsRoutes(app: FastifyInstance, cloudflare: Cloudfl
     reply.clearCookie(CLOUDFLARE_OAUTH_COOKIE, { path: CLOUDFLARE_OAUTH_CALLBACK_PATH });
     reply.clearCookie(LEGACY_CLOUDFLARE_OAUTH_COOKIE, { path: CLOUDFLARE_OAUTH_CALLBACK_PATH });
 
-    const fail = () => reply.redirect(cloudflare.oauthResultUrl("error"), 303);
+    const fail = (reason: "error" | "permissions" = "error") => reply.redirect(cloudflare.oauthResultUrl(reason), 303);
     try {
       const query = new URL(request.raw.url ?? CLOUDFLARE_OAUTH_CALLBACK_PATH, "http://shelter.invalid").searchParams;
       const states = query.getAll("state");
@@ -176,7 +176,7 @@ export function registerSettingsRoutes(app: FastifyInstance, cloudflare: Cloudfl
       const state = states[0]!;
       if (errors.length === 1) {
         cloudflare.cancelOAuth(state, browserNonce);
-        return fail();
+        return fail(errors[0] === "invalid_scope" ? "permissions" : "error");
       }
       const code = codes[0]!;
       if (code.length < 1 || code.length > 4096) return fail();
@@ -191,7 +191,7 @@ export function registerSettingsRoutes(app: FastifyInstance, cloudflare: Cloudfl
           }
         : { name: "UnknownError", message: "Unbekannter Cloudflare-OAuth-Fehler" };
       app.log.warn({ oauthError }, "Cloudflare OAuth callback failed");
-      return fail();
+      return fail(oauthError.code === "CLOUDFLARE_OAUTH_SCOPE_MISSING" ? "permissions" : "error");
     }
   });
 

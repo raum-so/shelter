@@ -1,11 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Braces, Cloud, Palette, ShieldCheck, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useI18n } from '@/i18n';
 import { Button, PageIntro } from '@/components/ui';
-import { GitHubIcon } from '@/components/GitHubIcon';
 
-export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding' | 'updates';
+export type SettingsSection = 'cloudflare' | 'github' | 'api' | 'security' | 'branding' | 'updates' | 'smtp';
 
 export function SettingsHeader({
   section,
@@ -34,6 +32,7 @@ export function SettingsHeader({
     return () => observer.disconnect();
   }, [section]);
   const copy = {
+    smtp: {title:t('Email & SMTP','E-Mail & SMTP'),description:t('Configure one secure mail server for this installation and its services.','Konfiguriere einen sicheren Mailserver für diese Installation und ihre Dienste.')},
     updates: { title: t('Updates', 'Updates'), description: t('Check your installed version and update Shelter from a verified release.', 'Prüfe deine installierte Version und aktualisiere Shelter mit einem verifizierten Release.') },
     branding: { title: t('Branding', 'Branding'), description: t('Make this platform your own. Preview, save and transfer your brand identity.', 'Gestalte diese Plattform mit deiner Marke. Identität vorschauen, speichern und übertragen.') },
     cloudflare: {
@@ -67,31 +66,36 @@ export function SettingsHeader({
   } satisfies Record<SettingsSection, { title: string; description: string }>;
 
   const items = [
-    { key: 'branding' as const, to: '/settings/branding', label: t('Branding', 'Branding'), icon: Palette },
-    { key: 'cloudflare' as const, to: '/settings/cloudflare', label: 'Cloudflare & Routing', icon: Cloud },
-    { key: 'github' as const, to: '/settings/github', label: 'GitHub', icon: GitHubIcon },
-    { key: 'api' as const, to: '/settings/api', label: 'API & CLI', icon: Braces },
-    { key: 'security' as const, to: '/settings/security', label: t('Security', 'Sicherheit'), icon: ShieldCheck },
-    { key: 'updates' as const, to: '/settings/updates', label: t('Updates', 'Updates'), icon: Download },
+    { key: 'branding' as const, to: '/settings/branding', label: t('Branding', 'Branding') },
+    { key: 'cloudflare' as const, to: '/settings/cloudflare', label: 'Cloudflare & Routing' },
+    { key: 'github' as const, to: '/settings/github', label: 'GitHub' },
+    { key: 'smtp' as const, to: '/settings/smtp', label: t('Email & SMTP', 'E-Mail & SMTP') },
+    { key: 'api' as const, to: '/settings/api', label: 'API & CLI' },
+    { key: 'security' as const, to: '/settings/security', label: t('Security', 'Sicherheit') },
+    { key: 'updates' as const, to: '/settings/updates', label: t('Updates', 'Updates') },
   ];
 
   return (
-    <div className="grid gap-5">
+    <div className="flex min-w-0 flex-col gap-6">
       <PageIntro
         eyebrow={t('Settings', 'Einstellungen')}
         title={copy[section].title}
         description={copy[section].description}
-        actions={<div className="flex flex-wrap items-center gap-3">{status}<Button asChild variant="outline"><Link to="/setup">{t('Setup guide', 'Einrichtung')}</Link></Button></div>}
+        actions={<div className="flex flex-wrap items-center gap-3">{status}<Button asChild variant="ghost" size="sm"><Link to="/setup">{t('Setup guide', 'Einrichtung')}</Link></Button></div>}
       />
-      <nav className="flex gap-1 overflow-x-auto border-b pb-px" aria-label={t('Settings sections', 'Einstellungsbereiche')}>
-        {items.map(({ key, to, label, icon: Icon }) => {
+      <nav className="flex h-11 min-w-0 gap-2 overflow-x-auto overflow-y-hidden border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label={t('Settings sections', 'Einstellungsbereiche')}>
+        {items.map(({ key, to, label }) => {
           const active = section === key;
           return (
-            <Button key={key} asChild variant={active ? 'secondary' : 'ghost'} className="rounded-b-none">
-              <Link ref={active ? activeItem : undefined} to={to} aria-current={active ? 'page' : undefined}>
-                <Icon aria-hidden="true" /> {label}
-              </Link>
-            </Button>
+            <Link
+              key={key}
+              ref={active ? activeItem : undefined}
+              to={to}
+              aria-current={active ? 'page' : undefined}
+              className="relative inline-flex h-full shrink-0 items-center px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 aria-[current=page]:text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full aria-[current=page]:after:bg-foreground"
+            >
+              {label}
+            </Link>
           );
         })}
       </nav>

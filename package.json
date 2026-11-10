@@ -1,6 +1,6 @@
 {
   "name": "shelter",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
   "description": "A small, self-hosted deployment control plane for a single VPS.",
   "license": "AGPL-3.0-only",
@@ -19,7 +19,8 @@
     "release:prepare": "node ops/prepare-release.mjs",
     "cli": "npm run start --silent -w @shelter/cli --",
     "cli:pack": "npm run build -w @shelter/cli && node ops/pack-cli.mjs",
-    "test:cli-package": "node --test test/cli-package.test.mjs"
+    "test:cli-package": "node --test test/cli-package.test.mjs",
+    "test:supabase": "SHELTER_TEST_SUPABASE_DOCKER=1 npm run test -w @shelter/server -- supabase-docker.test.ts"
   },
   "engines": {
     "node": ">=24.0.0",
@@ -32,5 +33,13 @@
   "devDependencies": {
     "concurrently": "^10.0.3",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "@ts-morph/common": {
+      "minimatch": "11.0.5"
+    },
+    "monaco-editor": {
+      "dompurify": "3.4.17"
+    }
   }
 }

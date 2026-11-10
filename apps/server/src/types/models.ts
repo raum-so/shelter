@@ -55,6 +55,7 @@ export interface SessionRow {
 }
 
 export interface ApiTokenRow {
+  project_id?: string | null;
   id: string;
   user_id: string;
   name: string;
@@ -113,6 +114,7 @@ export interface ProjectDeletionRow {
 }
 
 export interface DomainRow {
+  connection?: "cloudflare" | "external";
   id: string;
   project_id: string;
   hostname: string;
@@ -437,6 +439,7 @@ export interface PublicProject {
     id: string;
     hostname: string;
     status: DomainRow["status"];
+    connection?: "cloudflare" | "external";
     error: string | null;
     passwordProtectionEnabled: boolean;
     passwordConfigured: boolean;

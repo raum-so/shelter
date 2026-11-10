@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button as ShadcnButton } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Field as FieldRoot, FieldLabel, FieldDescription } from '@/components/ui/field';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton as ShadcnSkeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -80,10 +80,10 @@ export function Field({
   const descriptionId = hint || error ? `${id}-description` : undefined;
 
   return (
-    <div className={cn('grid min-w-0 gap-2', className)}>
-      <Label htmlFor={id} className="text-sm font-medium">
+    <FieldRoot className={className} data-invalid={Boolean(error) || undefined} data-disabled={props.disabled || undefined}>
+      <FieldLabel htmlFor={id}>
         {label}
-      </Label>
+      </FieldLabel>
       <Input
         id={id}
         className="h-9"
@@ -92,14 +92,14 @@ export function Field({
         {...props}
       />
       {(error || hint) && (
-        <p
-          className={cn('text-xs leading-relaxed text-muted-foreground', error && 'text-destructive')}
+        <FieldDescription
+          className={cn(error && 'text-destructive')}
           id={descriptionId}
         >
           {error ?? hint}
-        </p>
+        </FieldDescription>
       )}
-    </div>
+    </FieldRoot>
   );
 }
 
@@ -120,10 +120,10 @@ export function SelectField({
   const descriptionId = hint || error ? `${id}-description` : undefined;
 
   return (
-    <div className={cn('grid min-w-0 gap-2', className)}>
-      <Label htmlFor={id} className="text-sm font-medium">
+    <FieldRoot className={className} data-invalid={Boolean(error) || undefined} data-disabled={props.disabled || undefined}>
+      <FieldLabel htmlFor={id}>
         {label}
-      </Label>
+      </FieldLabel>
       <NativeSelect
         id={id}
         className="w-full [&_[data-slot=native-select]]:h-9"
@@ -134,14 +134,14 @@ export function SelectField({
         {children}
       </NativeSelect>
       {(error || hint) && (
-        <p
-          className={cn('text-xs leading-relaxed text-muted-foreground', error && 'text-destructive')}
+        <FieldDescription
+          className={cn(error && 'text-destructive')}
           id={descriptionId}
         >
           {error ?? hint}
-        </p>
+        </FieldDescription>
       )}
-    </div>
+    </FieldRoot>
   );
 }
 
@@ -149,7 +149,7 @@ const successStates = new Set(['live', 'success', 'running', 'active', 'connecte
 const progressStates = new Set(['deploying', 'preparing', 'building', 'checking', 'switching', 'queued', 'pending', 'provisioning']);
 const failedStates = new Set(['failed', 'error', 'cancelled', 'offline', 'deletion_failed']);
 
-export function StatusBadge({ status, className }: { status?: string; className?: string }) {
+export function StatusBadge({ status, label, className }: { status?: string; label?: string; className?: string }) {
   const { t } = useI18n();
   const statusLabels: Record<string, string> = {
     live: 'Live',
@@ -197,7 +197,7 @@ export function StatusBadge({ status, className }: { status?: string; className?
         )}
         aria-hidden="true"
       />
-      {statusLabels[normalized] ?? status}
+      {label ?? statusLabels[normalized] ?? status}
     </Badge>
   );
 }
@@ -214,13 +214,13 @@ export function PageIntro({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 max-w-3xl">
         {eyebrow && <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">{eyebrow}</div>}
-        <h1 className="min-w-0 text-balance text-[1.75rem] font-semibold tracking-[-0.045em] [overflow-wrap:anywhere]">{title}</h1>
-        {description && <p className="mt-2 min-w-0 max-w-2xl text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{description}</p>}
+        <h1 className="min-w-0 text-balance text-[1.625rem] font-semibold tracking-[-0.035em] [overflow-wrap:anywhere]">{title}</h1>
+        {description && <p className="mt-2 min-w-0 max-w-2xl text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{description}</p>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 sm:pt-1">{actions}</div>}
     </header>
   );
 }

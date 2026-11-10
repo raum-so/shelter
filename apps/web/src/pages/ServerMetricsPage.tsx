@@ -266,7 +266,7 @@ function healthCopy(id: ServerHealthId, current: ServerMetricsCurrent, sampledAt
 function ServerMetricsSkeleton() {
   return (
     <div className="grid gap-8">
-      <div className="space-y-3 border-b pb-6"><Skeleton className="h-4 w-24" /><Skeleton className="h-10 w-72" /><Skeleton className="h-4 w-full max-w-xl" /></div>
+      <div className="flex flex-col gap-3 border-b pb-6"><Skeleton className="h-4 w-24" /><Skeleton className="h-10 w-72" /><Skeleton className="h-4 w-full max-w-xl" /></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton className="h-56" key={index} />)}</div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]"><Skeleton className="h-[27rem]" /><Skeleton className="h-[27rem]" /></div>
     </div>
@@ -311,7 +311,7 @@ export function ServerMetricsPage() {
   };
 
   return (
-    <div className="flex w-full flex-col gap-8">
+    <div className="flex min-w-0 w-full flex-col gap-6">
       <PageIntro
         eyebrow={<><Server className="size-4" aria-hidden="true" /> {t('Infrastructure', 'Infrastruktur')}</>}
         title={t('Server metrics', 'Servermetriken')}

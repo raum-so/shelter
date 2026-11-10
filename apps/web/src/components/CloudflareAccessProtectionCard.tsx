@@ -25,8 +25,8 @@ function confirmationDate(value: string | null) {
 
 export function cloudflareAccessApplicationsUrl(accountId?: string | null) {
   return accountId && /^[a-f0-9]{32}$/i.test(accountId)
-    ? `https://dash.cloudflare.com/${accountId}/one/access/apps`
-    : 'https://dash.cloudflare.com/?to=/:account/one/access/apps';
+    ? `https://dash.cloudflare.com/${accountId}/one/access-controls/apps`
+    : 'https://one.dash.cloudflare.com/';
 }
 
 export function CloudflareAccessProtectionCard({
@@ -160,6 +160,10 @@ export function CloudflareAccessProtectionCard({
             </Button>
           )}
         </div>
+
+        <p className="text-xs text-muted-foreground">
+          {t('In Cloudflare: Zero Trust → Access controls → Applications.', 'In Cloudflare: Zero Trust → Access controls → Applications.')}
+        </p>
 
         {confirmed && confirmedAt && (
           <p className="text-xs text-muted-foreground" role="status">

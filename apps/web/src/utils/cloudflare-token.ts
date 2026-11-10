@@ -10,6 +10,7 @@ export function cloudflareTokenTemplateUrl(accountId = ''): string {
       { key: 'zone', type: 'read' },
       { key: 'dns', type: 'edit' },
       { key: 'argotunnel', type: 'edit' },
+      { key: 'ssl_and_certificates', type: 'edit' },
     ]),
   );
   url.searchParams.set(

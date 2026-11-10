@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { z } from "zod";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../config.js";
@@ -106,12 +107,27 @@ class CloudflareClient {
 
     if (!response.ok || !envelope.success) {
       const detail = envelope.errors?.map((error) => error.message).join(", ") || `HTTP ${response.status}`;
-      if (response.status === 404) throw new CloudflareApiError(404, `Cloudflare: ${detail}`);
-      throw upstreamError(`Cloudflare: ${detail}`, "CLOUDFLARE_API");
+      throw new CloudflareApiError(response.status, `Cloudflare: ${detail}`);
     }
     return envelope.result;
   }
 }
+
+const customHostnameSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9-]{1,128}$/),
+  hostname: z.string().max(253),
+  status: z.string().max(80),
+  ssl: z.object({
+    status: z.string().max(80),
+    validation_records: z.array(z.object({
+      txt_name: z.string().max(253).optional(),
+      txt_value: z.string().max(1024).optional()
+    })).max(20).optional()
+  }),
+  custom_origin_server: z.string().optional()
+});
+export type CloudflareCustomHostname = z.infer<typeof customHostnameSchema>;
+export interface ExternalDomainSettings { configured: boolean; zoneId: string | null; cnameTarget: string | null; suggestedZoneId: string | null; suggestedCnameTarget: string | null }
 
 export interface CloudflareSetupInput {
   accountId: string;
@@ -136,6 +152,7 @@ export interface CloudflareState {
   accounts: CloudflareOAuthAccount[];
   oauthExpiresAt: string | null;
   reconnectRequired: boolean;
+  oauthMissingScopes: string[];
   accessProtection: CloudflareAccessProtectionState;
 }
 
@@ -172,6 +189,116 @@ export class CloudflareService {
     this.oauth = new CloudflareOAuthService(config, database);
   }
 
+  externalDomainSettings(): ExternalDomainSettings {
+    const zoneId = this.database.getSetting("cloudflare.saas_zone_id") ?? null;
+    const cnameTarget = this.database.getSetting("cloudflare.saas_cname_target") ?? null;
+    return {
+      configured: Boolean(zoneId && cnameTarget), zoneId, cnameTarget,
+      suggestedZoneId: this.database.getSetting("cloudflare.panel_zone_id") ?? null,
+      suggestedCnameTarget: this.database.getSetting("cloudflare.panel_domain") ?? null
+    };
+  }
+
+  async configureExternalDomains(zoneId: string, target: string): Promise<ExternalDomainSettings> {
+    const cnameTarget = normalizeHostname(target);
+    const current = this.externalDomainSettings();
+    if (this.database.sqlite.prepare("SELECT 1 FROM external_domains LIMIT 1").get()
+      && (current.zoneId !== zoneId || current.cnameTarget !== cnameTarget)) {
+      throw conflict("Remove external domains before changing their connection target", "EXTERNAL_DOMAINS_IN_USE");
+    }
+    const primaryDomain = this.database.getSetting("cloudflare.panel_domain")?.toLowerCase();
+    // Reusing the primary DNS destination does not make it a project domain.
+    // A saved former primary remains valid after a panel-domain transition.
+    if ((panelHostnames(this.database).includes(cnameTarget) && cnameTarget !== primaryDomain && cnameTarget !== current.cnameTarget)
+      || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(cnameTarget)
+      || this.database.listDomains().some(domain => domain.hostname === cnameTarget)) {
+      throw conflict("The connection target is already assigned", "DOMAIN_EXISTS");
+    }
+    await this.validateExternalDomainTarget(zoneId, cnameTarget);
+    this.database.sqlite.transaction(() => {
+      const latest = this.externalDomainSettings();
+      if (this.database.sqlite.prepare("SELECT 1 FROM external_domains LIMIT 1").get()
+        && (latest.zoneId !== zoneId || latest.cnameTarget !== cnameTarget)) {
+        throw conflict("Remove external domains before changing their connection target", "EXTERNAL_DOMAINS_IN_USE");
+      }
+      this.database.setSetting("cloudflare.saas_zone_id", zoneId);
+      this.database.setSetting("cloudflare.saas_cname_target", cnameTarget);
+    }).immediate();
+    return this.externalDomainSettings();
+  }
+
+  async validateExternalDomainTarget(zoneId: string, cnameTarget: string): Promise<void> {
+    const { accountId, apiToken, authMethod } = await this.credentials();
+    if (authMethod === "oauth" && this.oauth.missingScopes().includes("ssl-and-certificates.write")) {
+      throw badRequest(
+        "Für Kundendomains fehlt dem Cloudflare-Login SSL and Certificates Write. Verbinde Cloudflare in den Einstellungen erneut und erlaube die zusätzlichen Rechte.",
+        "CLOUDFLARE_OAUTH_SCOPE_MISSING"
+      );
+    }
+    const client = new CloudflareClient(apiToken);
+    await this.findZone(client, accountId, cnameTarget, zoneId);
+    // Configuration is read-only at the provider: never replace a zone-wide
+    // fallback origin that might serve other applications.
+    let fallback: { origin?: string; status?: string };
+    try {
+      fallback = await client.request("GET", `/zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`);
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.upstreamStatus === 403) {
+        throw badRequest(
+          "Cloudflare verweigert den SaaS-Zugriff. Erlaube dem verbundenen Zugang SSL and Certificates Write für diese Domain.",
+          "CLOUDFLARE_SAAS_PERMISSION_REQUIRED"
+        );
+      }
+      throw error;
+    }
+    if (canonicalDnsName(fallback.origin ?? "") !== cnameTarget || fallback.status !== "active") {
+      throw badRequest("Enable Cloudflare for SaaS and select this active fallback origin first", "SAAS_FALLBACK_NOT_READY");
+    }
+    const tunnelId = this.database.getSetting("cloudflare.tunnel_id");
+    const records = await client.request<CloudflareDnsRecord[]>("GET", `/zones/${encodeURIComponent(zoneId)}/dns_records?${new URLSearchParams({ name: cnameTarget, per_page: "50" })}`);
+    if (!tunnelId || records.length !== 1 || records[0]?.type !== "CNAME" || !records[0].proxied
+      || canonicalDnsName(records[0].name) !== cnameTarget
+      || canonicalDnsName(records[0].content) !== `${tunnelId}.cfargotunnel.com`.toLowerCase()) {
+      throw badRequest("The fallback must be a proxied CNAME pointing to this Shelter tunnel", "SAAS_TARGET_INVALID");
+    }
+  }
+
+  async createCustomHostname(zoneId: string, hostname: string): Promise<CloudflareCustomHostname> {
+    const { apiToken } = await this.credentials();
+    const client = new CloudflareClient(apiToken);
+    const path = `/zones/${encodeURIComponent(zoneId)}/custom_hostnames`;
+    const existing = await client.request<unknown[]>("GET", `${path}?${new URLSearchParams({ hostname, per_page: "1" })}`);
+    // An unrecorded resource is not ours, including after an interrupted POST.
+    if (existing.length) throw conflict("A custom hostname already exists in Cloudflare; review it before retrying", "CUSTOM_HOSTNAME_EXISTS");
+    return customHostnameSchema.parse(await client.request("POST", path, { hostname, ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } }));
+  }
+
+  async getCustomHostname(zoneId: string, id: string, hostname: string): Promise<CloudflareCustomHostname | null> {
+    const { apiToken } = await this.credentials();
+    const client = new CloudflareClient(apiToken);
+    let result: CloudflareCustomHostname;
+    try {
+      result = customHostnameSchema.parse(await client.request("GET", `/zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(id)}`));
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.upstreamStatus === 404) return null;
+      throw error;
+    }
+    if (canonicalDnsName(result.hostname) !== hostname || result.id !== id || result.custom_origin_server) {
+      throw conflict("The Cloudflare custom hostname no longer matches this binding", "CUSTOM_HOSTNAME_DRIFT");
+    }
+    return result;
+  }
+
+  async deleteCustomHostname(zoneId: string, id: string, hostname: string): Promise<void> {
+    if (!await this.getCustomHostname(zoneId, id, hostname)) return;
+    const { apiToken } = await this.credentials();
+    try {
+      await new CloudflareClient(apiToken).request("DELETE", `/zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(id)}`);
+    } catch (error) {
+      if (!(error instanceof CloudflareApiError && error.upstreamStatus === 404)) throw error;
+    }
+  }
+
   startOAuth(userId: string, sessionTokenHash: string): {
     authorizationUrl: string;
     browserNonce: string;
@@ -188,7 +315,7 @@ export class CloudflareService {
     this.oauth.cancel(state, browserNonce);
   }
 
-  oauthResultUrl(result: "connected" | "error"): string {
+  oauthResultUrl(result: "connected" | "error" | "permissions"): string {
     return this.oauth.resultUrl(result);
   }
 
@@ -239,6 +366,7 @@ export class CloudflareService {
       accounts: pending?.accounts ?? oauthConnection?.accounts ?? [],
       oauthExpiresAt: oauthConnection?.expiresAt ?? null,
       reconnectRequired: disabled ? false : this.oauth.reconnectRequired(),
+      oauthMissingScopes: authMethod === "oauth" ? this.oauth.missingScopes() : [],
       accessProtection: cloudflareAccessProtection(this.database)
     };
   }
@@ -392,7 +520,7 @@ export class CloudflareService {
     if (panelHostnames(this.database).includes(hostname)) {
       return { hostname, availability: false, reason: "PANEL_DOMAIN_RESERVED", zone };
     }
-    if (this.database.listDomains().some((domain) => domain.hostname.toLowerCase() === hostname)) {
+    if ((this.database.listDomains().some((domain) => domain.hostname.toLowerCase() === hostname) || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(hostname))) {
       return { hostname, availability: false, reason: "SHELTER_DOMAIN_ASSIGNED", zone };
     }
 
@@ -423,8 +551,17 @@ export class CloudflareService {
     if (!/^[a-f0-9]{32}$/i.test(accountId)) throw badRequest("Ungültige Cloudflare Account-ID", "INVALID_ACCOUNT_ID");
     const tunnelName = (input.tunnelName || this.database.getSetting("cloudflare.tunnel_name") || "shelter-vps").trim();
     if (!/^[a-zA-Z0-9_.-]{2,64}$/.test(tunnelName)) throw badRequest("Ungültiger Tunnelname", "INVALID_TUNNEL_NAME");
+    if (this.database.sqlite.prepare("SELECT 1 FROM external_domains LIMIT 1").get()) {
+      const active = this.state();
+      if (active.accountId?.toLowerCase() !== accountId || active.tunnelName !== tunnelName) {
+        throw conflict("Remove external domains before changing their Cloudflare account or tunnel", "EXTERNAL_DOMAINS_IN_USE");
+      }
+    }
     const requestedPanelDomain = input.panelDomain ? normalizeHostname(input.panelDomain) : undefined;
-    if (requestedPanelDomain && this.database.listDomains().some((domain) => domain.hostname === requestedPanelDomain)) {
+    if (requestedPanelDomain && ((requestedPanelDomain === this.externalDomainSettings().cnameTarget
+      && requestedPanelDomain !== this.database.getSetting("cloudflare.panel_domain"))
+      || this.database.listDomains().some((domain) => domain.hostname === requestedPanelDomain)
+      || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(requestedPanelDomain))) {
       throw conflict("Die Panel-Domain ist bereits einem Projekt zugeordnet", "PANEL_DOMAIN_CONFLICT");
     }
 
@@ -553,6 +690,11 @@ export class CloudflareService {
       const panelDomain = requestedPanelDomain;
       const dns = await this.ensureDnsRecordWith(client, accountId, panelDomain, ownedTunnel.id);
       this.database.sqlite.transaction(() => {
+        // Recheck after provider I/O: a service or project may have claimed it meanwhile.
+        if (this.database.listDomains().some(domain => domain.hostname === panelDomain)
+          || this.database.sqlite.prepare("SELECT 1 FROM supabase_domains WHERE hostname = ?").get(panelDomain)) {
+          throw conflict("Domain ist inzwischen einem Projekt oder Dienst zugeordnet", "SHELTER_DOMAIN_ASSIGNED");
+        }
         storePanelDomainTransition(this.database, panelDomain, dns.zoneId, dns.recordId);
       })();
     }

@@ -5,11 +5,12 @@ import {
   ensureContainerOnProjectNetwork,
   ensureTraefikOnProjectNetwork,
   projectNetworkName,
+  ProjectNetworkCapacityError,
   type ProjectNetworkCommandRunner
 } from "./project-network.js";
 import { managedProjectIdForContainer, MANAGED_LABEL_NAMESPACES } from "./runtime-identity.js";
 
-type NetworkConfig = Pick<AppConfig, "RUNTIME_NETWORK">;
+type NetworkConfig = Pick<AppConfig, "RUNTIME_NETWORK" | "PROJECT_NETWORK_POOL">;
 
 interface ProjectIdRow {
   id: string;
@@ -76,7 +77,7 @@ export class ProjectNetworkReconciler {
   }
 
   async prepareProject(projectId: string): Promise<string> {
-    const { networkName } = await ensureTraefikOnProjectNetwork(projectId, this.command);
+    const { networkName } = await ensureTraefikOnProjectNetwork(projectId, this.command, this.config.PROJECT_NETWORK_POOL);
     return networkName;
   }
 
@@ -84,20 +85,29 @@ export class ProjectNetworkReconciler {
     // Keep the legacy network attached until both the runtime and Traefik have
     // verified project-network attachments. This makes migration additive and
     // avoids dropping a live route halfway through reconciliation.
-    const networkName = await ensureContainerOnProjectNetwork(projectId, container, this.command);
-    await ensureTraefikOnProjectNetwork(projectId, this.command);
+    const networkName = await ensureContainerOnProjectNetwork(projectId, container, this.command, this.config.PROJECT_NETWORK_POOL);
+    await ensureTraefikOnProjectNetwork(projectId, this.command, this.config.PROJECT_NETWORK_POOL);
     if (this.config.RUNTIME_NETWORK !== networkName) {
       await disconnectContainerFromNetwork(this.config.RUNTIME_NETWORK, container, this.command);
     }
     return networkName;
   }
 
-  async reconcileAll(): Promise<void> {
+  async reconcileAll(): Promise<string[]> {
+    const capacityBlocked: string[] = [];
     for (const projectId of this.projectIds()) {
       const containers = await this.managedProjectContainerIds(projectId);
       if (containers.length === 0) continue;
-      for (const container of containers) await this.prepareRuntime(projectId, container);
+      try {
+        for (const container of containers) await this.prepareRuntime(projectId, container);
+      } catch (error) {
+        // Preserve the old attachment and continue reconciling healthy projects.
+        // Ownership and Docker transport failures still fail closed.
+        if (!(error instanceof ProjectNetworkCapacityError)) throw error;
+        capacityBlocked.push(projectId);
+      }
     }
+    return capacityBlocked;
   }
 
   networkName(projectId: string): string {

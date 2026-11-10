@@ -47,6 +47,7 @@ import { BRAND_NAME } from '../lib/brand';
 import { useI18n, type Translate } from '@/i18n';
 
 function failureTitle(kind: string | null, t: Translate): string {
+  if (kind === 'network') return t('No network capacity available', 'Kein freier Netzwerkbereich');
   if (kind === 'timeout') return t('Deployment timed out', 'Zeitlimit des Deployments überschritten');
   if (kind === 'healthcheck') return t('Health check failed', 'Healthcheck fehlgeschlagen');
   if (kind === 'activation') return t('Activation failed', 'Aktivierung fehlgeschlagen');
@@ -55,6 +56,7 @@ function failureTitle(kind: string | null, t: Translate): string {
 }
 
 function failureDescription(kind: string | null, hasActiveProduction: boolean, t: Translate): string {
+  if (kind === 'network') return t('The server needs a free network range for this app. Ask the administrator to configure or expand the project network pool. Existing apps remain online.', 'Der Server benötigt einen freien Netzwerkbereich für diese App. Der Administrator muss den Netzwerkpool für Projekte einrichten oder erweitern. Bestehende Apps bleiben online.');
   if (kind === 'timeout') {
     return hasActiveProduction
       ? t(
@@ -312,26 +314,13 @@ export function DeploymentPage() {
     );
   }
 
-  const failureKind = deploymentFailureKind(deployment);
+  const failureKind = deployment.error === 'PROJECT_NETWORK_CAPACITY' ? 'network' : deploymentFailureKind(deployment);
   const automaticRecovery = deploymentAutomaticRecovery(deployment);
 
   return (
-    <div className="grid min-w-0 gap-6 sm:gap-7">
-      <Button asChild variant="ghost" className="-ml-2 w-fit min-w-0 max-w-[calc(100%+0.5rem)] text-muted-foreground">
-        <Link to={`/projects/${project.id}?tab=deployments`}>
-          <ArrowLeft />
-          <span className="min-w-0 truncate">{project.name}</span>
-          <span className="shrink-0">· {t('Deployments', 'Deployments')}</span>
-        </Link>
-      </Button>
-
+    <div className="grid min-w-0 gap-6">
       <PageIntro
-        eyebrow={(
-          <>
-            <StatusBadge status={deployment.status} />
-            {production && <Badge variant="secondary">{t('Production', 'Produktion')}</Badge>}
-          </>
-        )}
+        eyebrow={<Link to={`/projects/${project.id}?tab=deployments`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><ArrowLeft className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{project.name}</span><span>· {t('Deployments', 'Deployments')}</span></Link>}
         title={`Deployment ${deployment.id.slice(0, 8)}`}
         description={`${deploymentSourceLabel(deployment, project)} · ${formatRelative(deployment.createdAt ?? deployment.startedAt, locale)}`}
         actions={cancellationStateVisible || rollbackAvailable ? (
@@ -378,6 +367,8 @@ export function DeploymentPage() {
           </div>
         ) : undefined}
       />
+
+      <div className="flex flex-wrap items-center gap-2"><StatusBadge status={deployment.status} />{production && <Badge variant="secondary">{t('Production', 'Produktion')}</Badge>}</div>
 
       {cancellationRequested && activeDeploymentStates.has(deployment.status) && (
         <Alert role="status">

@@ -80,28 +80,62 @@ function assertOwnedProjectNetwork(
   }
 }
 
+export class ProjectNetworkCapacityError extends Error {
+  readonly code = "PROJECT_NETWORK_CAPACITY";
+
+  constructor() {
+    super("PROJECT_NETWORK_CAPACITY");
+    this.name = "ProjectNetworkCapacityError";
+  }
+}
+
 export async function ensureProjectNetwork(
   projectId: string,
-  command: ProjectNetworkCommandRunner = runCommand
+  command: ProjectNetworkCommandRunner = runCommand,
+  pool?: string,
 ): Promise<string> {
   const networkName = projectNetworkName(projectId);
-  let labels = await inspectNetworkLabels(networkName, command);
-  if (!labels) {
-    await command("docker", [
-      "network", "create",
-      "--driver", "bridge",
-      "--label", "shelter.managed=true",
-      "--label", `shelter.project=${projectId}`,
-      "--label", `shelter.purpose=${PROJECT_NETWORK_PURPOSE}`,
-      networkName
-    ], { allowFailure: true });
-    // A concurrent reconciliation may have won the create race. Ownership is
-    // always verified after creation instead of trusting the command result.
-    labels = await inspectNetworkLabels(networkName, command);
-    if (!labels) throw new Error(`Docker-Netzwerk ${networkName} konnte nicht angelegt werden`);
+  const existing = await inspectNetworkLabels(networkName, command);
+  if (existing) {
+    assertOwnedProjectNetwork(existing, networkName, projectId);
+    return networkName;
   }
-  assertOwnedProjectNetwork(labels, networkName, projectId);
-  return networkName;
+  // The operator reserves this range after checking host/VPN routes. Docker
+  // rejects individual overlaps; existing networks are never renumbered.
+  if (pool && (!/^10\.(?:0|[1-9]\d{0,2})\.0\.0\/16$/.test(pool) || Number(pool.split(".")[1]) > 255)) {
+    throw new Error("Invalid PROJECT_NETWORK_POOL");
+  }
+  const prefix = pool?.split(".").slice(0, 2).join(".");
+  const offset = createHash("sha256").update(networkName).digest()[0]!;
+  for (let attempt = 0; attempt < (pool ? 256 : 1); attempt++) {
+    const subnet = prefix ? `${prefix}.${(offset + attempt) % 256}.0/24` : undefined;
+    const result = await command("docker", [
+      "network", "create", "--driver", "bridge",
+      ...projectNetworkLabels(projectId),
+      ...(subnet ? ["--subnet", subnet] : []),
+      networkName,
+    ], { allowFailure: true });
+    // A concurrent creator may have won. Verify ownership even when create failed.
+    const labels = await inspectNetworkLabels(networkName, command);
+    if (labels) {
+      assertOwnedProjectNetwork(labels, networkName, projectId);
+      return networkName;
+    }
+    if (pool && /pool overlaps with other one/i.test(result.stderr)) continue;
+    if (/all predefined address pools have been fully subnetted/i.test(result.stderr)) {
+      throw new ProjectNetworkCapacityError();
+    }
+    throw new Error(`Docker-Netzwerk ${networkName} konnte nicht angelegt werden`);
+  }
+  throw new ProjectNetworkCapacityError();
+}
+
+function projectNetworkLabels(projectId: string): string[] {
+  return [
+    "--label", "shelter.managed=true",
+    "--label", `shelter.project=${projectId}`,
+    "--label", `shelter.purpose=${PROJECT_NETWORK_PURPOSE}`,
+  ];
 }
 
 async function inspectedContainerNetworks(
@@ -122,12 +156,13 @@ async function inspectedContainerNetworks(
 export async function ensureContainerOnProjectNetwork(
   projectId: string,
   container: string,
-  command: ProjectNetworkCommandRunner = runCommand
+  command: ProjectNetworkCommandRunner = runCommand,
+  pool?: string,
 ): Promise<string> {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(container)) {
     throw new Error("Containername ist nicht sicher verwaltet");
   }
-  const networkName = await ensureProjectNetwork(projectId, command);
+  const networkName = await ensureProjectNetwork(projectId, command, pool);
   const before = await inspectedContainerNetworks(container, command);
   if (!before) throw new Error(`Container ${container} wurde für die Netzwerkzuordnung nicht gefunden`);
   if (Object.hasOwn(before, networkName)) return networkName;
@@ -208,12 +243,13 @@ async function inspectTraefikContainer(
 
 export async function ensureTraefikOnProjectNetwork(
   projectId: string,
-  command: ProjectNetworkCommandRunner = runCommand
+  command: ProjectNetworkCommandRunner = runCommand,
+  pool?: string,
 ): Promise<{ networkName: string; traefikIds: string[] }> {
-  const networkName = await ensureProjectNetwork(projectId, command);
+  const networkName = await ensureProjectNetwork(projectId, command, pool);
   const traefikIds = await runningTraefikContainerIds(command);
   if (traefikIds.length === 0) throw new Error("Kein laufender verwalteter Traefik-Container gefunden");
-  for (const id of traefikIds) await ensureContainerOnProjectNetwork(projectId, id, command);
+  for (const id of traefikIds) await ensureContainerOnProjectNetwork(projectId, id, command, pool);
   return { networkName, traefikIds };
 }
 

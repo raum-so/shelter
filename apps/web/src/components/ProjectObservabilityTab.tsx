@@ -524,17 +524,17 @@ export function ProjectObservabilityTab({
             <Button variant={follow ? 'secondary' : 'outline'} size="sm" onClick={() => setFollow((value) => !value)}>{follow ? <ArrowDown /> : <Pause />}{t('Follow', 'Folgen')}</Button>
           </div>
 
-          <div ref={logViewport} className="h-[26rem] overflow-auto rounded-lg border bg-zinc-950 p-3 font-mono text-[0.72rem] leading-5 text-zinc-200 shadow-inner" aria-label={t('Active runtime output', 'Ausgabe der aktiven Laufzeit')}>
+          <div ref={logViewport} className="h-[26rem] overflow-auto rounded-lg border bg-terminal p-3 font-mono text-[0.72rem] leading-5 text-terminal-foreground" aria-label={t('Active runtime output', 'Ausgabe der aktiven Laufzeit')}>
             {runtimeLogs.isLoading && logs.length === 0 ? (
-              <div className="grid h-full place-items-center text-zinc-500"><RefreshCw className="size-4 animate-spin" /></div>
+              <div className="grid h-full place-items-center text-terminal-foreground/65"><RefreshCw className="size-4 animate-spin" /></div>
             ) : visibleLogs.length === 0 ? (
-              <div className="grid h-full place-items-center p-8 text-center text-zinc-500">
+              <div className="grid h-full place-items-center p-8 text-center text-terminal-foreground/65">
                 <div><TerminalSquare className="mx-auto size-5" /><p className="mt-3">{search || streamFilter !== 'all' ? t('No log lines match this filter.', 'Keine Logzeile passt zu diesem Filter.') : t('No runtime output has been collected yet.', 'Es wurde noch keine Laufzeitausgabe erfasst.')}</p></div>
               </div>
             ) : visibleLogs.map((log) => (
               <div key={log.id} className="grid min-w-max grid-cols-[7rem_3.5rem_minmax(0,1fr)] gap-3 border-b border-white/5 py-0.5 last:border-0">
-                <time className="text-zinc-600" dateTime={log.timestamp} title={formatDate(log.timestamp, locale)}>{new Date(log.timestamp).toLocaleTimeString(locale === 'de' ? 'de-DE' : 'en-US', { hour12: false })}</time>
-                <span className={cn(log.stream === 'stderr' ? 'text-amber-400' : 'text-emerald-400/80')}>{log.stream}</span>
+                <time className="text-terminal-foreground/65" dateTime={log.timestamp} title={formatDate(log.timestamp, locale)}>{new Date(log.timestamp).toLocaleTimeString(locale === 'de' ? 'de-DE' : 'en-US', { hour12: false })}</time>
+                <span className={cn(log.stream === 'stderr' ? 'text-terminal-foreground' : 'text-terminal-foreground/65')}>{log.stream}</span>
                 <span className="whitespace-pre-wrap break-all">{log.message}</span>
               </div>
             ))}

@@ -27,6 +27,20 @@ async function context() {
 afterEach(async () => { for (const { app, directory } of contexts.splice(0)) { await app.close(); fs.rmSync(directory, { recursive: true, force: true }); } });
 
 describe('platform branding API', () => {
+  it('refreshes a saved untouched legacy default without rewriting custom branding', async () => {
+    const { app, database } = await context();
+    const legacy = { ...DEFAULT_BRANDING,
+      light: { primary: '#6652df', background: '#f5f7fc', foreground: '#17243b', surface: '#ffffff' },
+      dark: { primary: '#705be8', background: '#061321', foreground: '#f3f5fc', surface: '#0a1c2e' },
+    };
+    database.setSetting('platform.branding.v1', JSON.stringify(legacy));
+    expect((await app.inject('/api/branding')).json().profile).toEqual(DEFAULT_BRANDING);
+    expect(database.getSetting('platform.branding.v1')).toBe(JSON.stringify(legacy));
+    const custom = { ...legacy, name: 'A custom installation' };
+    database.setSetting('platform.branding.v1', JSON.stringify(custom));
+    expect((await app.inject('/api/branding')).json().profile).toEqual(custom);
+  });
+
   it('exports a portable profile, previews imports without publishing, rejects stale writes and resets atomically', async () => {
     const { app, headers, state, icon } = await context();
     const profile = { ...state.profile, name: 'Acme Cloud', claim: 'Your workspace', icon: `data:image/png;base64,${icon.toString('base64')}`, supportUrl: 'https://support.example.com' };

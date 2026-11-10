@@ -182,7 +182,7 @@ function DashboardSkeleton() {
   const { t } = useI18n();
   return (
     <div className="grid gap-8" role="status" aria-label={t('Loading dashboard', 'Dashboard wird geladen')}>
-      <div className="space-y-3 border-b pb-6"><Skeleton className="h-10 w-64" /><Skeleton className="h-5 w-full max-w-xl" /></div>
+      <div className="flex flex-col gap-3 border-b pb-6"><Skeleton className="h-10 w-64" /><Skeleton className="h-5 w-full max-w-xl" /></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((item) => <Skeleton className="h-36" key={item} />)}
       </div>

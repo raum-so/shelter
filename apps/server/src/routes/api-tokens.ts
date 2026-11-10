@@ -13,7 +13,8 @@ import type { ApiTokenMetadataRow, ApiTokenRow, ApiTokenScope } from "../types/m
 
 const CreateApiTokenSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  access: z.enum(["read", "write"]).default("write"),
+  access: z.enum(["read", "write", "domains"]).default("write"),
+  projectId: z.string().min(1).max(128).optional(),
   expiresInDays: z.number().int().min(1).max(365).default(90),
   currentPassword: z.string().min(1).max(1024)
 }).strict();
@@ -22,7 +23,8 @@ const ApiTokenParamsSchema = z.object({
   id: z.string().regex(/^tok_[a-f0-9]{32}$/)
 }).strict();
 
-function scopesForAccess(access: "read" | "write"): ApiTokenScope[] {
+function scopesForAccess(access: "read" | "write" | "domains"): ApiTokenScope[] {
+  if (access === "domains") return ["domains:write"];
   return access === "write"
     ? ["projects:read", "projects:write", "deployments:write", "uploads:write", "domains:write", "environment:write"]
     : ["projects:read"];
@@ -36,6 +38,7 @@ function presentApiToken(row: ApiTokenRow | ApiTokenMetadataRow) {
   return {
     id: row.id,
     name: row.name,
+    projectId: row.project_id ?? null,
     displayHint: `shelter_pat_v1_••••${row.token_hint}`,
     scopes: parsedScopes(row),
     createdAt: row.created_at,
@@ -65,11 +68,16 @@ export function registerApiTokenRoutes(app: FastifyInstance, database: Database)
     if (!await verifyPassword(input.currentPassword, authentication.user.password_hash)) {
       throw badRequest("Das aktuelle Passwort ist nicht korrekt", "CURRENT_PASSWORD_INVALID");
     }
+    if (input.access === "domains" && (!input.projectId || !database.getMutableProject(input.projectId))) {
+      throw badRequest("Choose an existing project for this domain token", "PROJECT_REQUIRED");
+    }
+    if (input.access !== "domains" && input.projectId) throw badRequest("Project restriction requires domain access", "VALIDATION");
     const issued = issueApiToken();
     const now = new Date();
     const row: ApiTokenRow = {
       id: newId("tok"),
       user_id: authentication.user.id,
+      project_id: input.access === "domains" ? input.projectId! : null,
       name: input.name,
       token_hash: hashApiToken(issued.token),
       token_hint: issued.hint,

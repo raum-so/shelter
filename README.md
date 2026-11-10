@@ -56,12 +56,14 @@ Most deployment platforms trade ownership for convenience. Traditional self-host
 - **Upload-friendly:** ZIP files and complete folders are uploaded in chunks, validated, and versioned.
 - **Useful defaults:** live source analysis for Next.js, React, Astro, Node.js, Vite, static exports, and safe file collections, with custom Dockerfile support when needed.
 - **Safe activation:** a disposable, resource-bounded helper probes each candidate on its project-only network before Traefik receives the new route.
-- **Cloudflare integration:** OAuth, tunnels, zones, DNS, hostname availability, apex domains, and multiple project domains in one place.
+- **Cloudflare integration:** OAuth, tunnels, zones, DNS, hostname availability, apex domains, and multiple project domains in one place. [External customer subdomains](docs/EXTERNAL-DOMAINS.md) connect by CNAME through Cloudflare for SaaS, with ownership verification and automatic HTTPS. Shared applications and dedicated customer projects are both supported.
 - **Instant context:** successful website deployments receive an automatic screenshot preview in the project overview.
 - **Operator-ready:** dashboard, deployment logs, rollbacks, project deletion, encrypted variables, resource limits, and per-project runtime observability.
+- **Managed Supabase:** isolated self-hosted instances with separate API and protected Studio hostnames, persistent data, and encrypted cold backups. See [Supabase operations](docs/SUPABASE.md) for capacity requirements and supported features.
+- **Shared outgoing email:** configure Resend, Zoho CPaaS, or another SMTPS provider once, verify the connection, and apply it to opted-in Supabase instances. See [global SMTP](docs/SMTP.md).
 - **Automation-ready:** scoped, expiring personal access tokens, a documented HTTP API, OpenAPI, and an installable `shelter` CLI.
 - **Verifiable releases:** immutable GitHub Releases, digest-pinned multi-platform images, signed provenance, downloadable SBOMs, and a fail-closed release installer.
-- **Workspace design:** navy and indigo surfaces, locally served Plus Jakarta Sans, compact project and deployment cards, and matching light, dark, and system themes. Navigation adapts to mobile screens. Preview the [dark](docs/images/workspace-dark.png) and [light](docs/images/workspace-light.png) dashboard with illustrative data.
+- **Workspace design:** neutral surfaces, locally served Geist typography, restrained controls and borders, and matching light, dark, and system themes. Shared forms, tabs, dialogs, and status treatments follow the [workspace design guide](docs/DESIGN.md). Navigation adapts to mobile screens. Preview the [dark](docs/images/workspace-dark.png) and [light](docs/images/workspace-light.png) dashboard with illustrative data.
 - **Multilingual panel:** English and German with browser detection and a persistent language preference.
 
 ## Quick start
@@ -184,6 +186,20 @@ API and worker share a WAL-enabled SQLite database in `shelter-data`. Persistent
 - `shelter-tunnel`: Cloudflare connector token.
 
 Only the worker mounts `/var/run/docker.sock`. The worker stays on the control network and is not attached to application networks. Every project receives its own managed bridge network containing only that project's runtime generation, short-lived helpers when needed, and the current Shelter Traefik generation; projects cannot address one another through a shared Shelter runtime network. Traefik uses its file provider and needs no socket. TLS terminates at Cloudflare Edge. The panel remains available on `127.0.0.1:${PANEL_PORT}` for bootstrap and emergency access through SSH.
+
+If Docker's default address pools are exhausted, reserve an unused private range
+with `PROJECT_NETWORK_POOL`, for example `10.251.0.0/16`. Check the entire range
+against host, LAN, VPN, cloud and Docker routes first. Shelter accepts canonical
+`10.x.0.0/16` ranges and allocates up to 256 separate `/24` project networks,
+skipping subnets already claimed by Docker. Keep this range separate from
+`SUPABASE_NETWORK_POOL` and the control subnet. Apply the setting through the
+normal installer, or recreate only the worker with
+`docker compose up -d --no-deps worker` when its image is already current.
+Existing networks, attachments and volumes are reused unchanged; no Docker
+daemon restart or network pruning is required. Unsetting the value restores
+Docker's default allocation for new networks only. If neither pool has room,
+new deployments fail with `PROJECT_NETWORK_CAPACITY`; reconciliation retains
+existing attachments and continues processing other projects.
 
 Candidate health probes and screenshot captures run in disposable containers on the matching project network. They have no Docker socket or host bind mount, use a read-only root filesystem, drop all capabilities, enforce memory/CPU/PID/time bounds, and are ownership-checked before removal. Builds use Shelter's dedicated Docker-container BuildKit builder with independently configured memory, swap, CPU, PID, and maximum-parallelism bounds plus a builder-cache GC target. A continuously sampled free-space guard cancels cancellable source/build work and refuses completion when the data filesystem falls below `BUILD_MIN_FREE_GB`.
 
@@ -327,6 +343,8 @@ Create a private self-managed OAuth client for this Shelter installation in Clou
 - **Response type:** `code`
 - **Grant types:** `authorization_code` and `refresh_token`
 - **Token authentication method:** `client_secret_basic`
+- **Allowed and required scopes:** `account-settings.read`, `zone.read`,
+  `dns.write`, `argotunnel.write`, `ssl-and-certificates.write`, and `offline_access`
 
 For the first connection over the SSH tunnel, register the exact browser URL, including scheme, local forwarding port, and path, with no trailing slash:
 
@@ -346,7 +364,7 @@ Add the credentials to `.env`:
 CLOUDFLARE_OAUTH_CLIENT_ID=...
 CLOUDFLARE_OAUTH_CLIENT_SECRET=...
 CLOUDFLARE_OAUTH_REDIRECT_URI=http://127.0.0.1:7080/api/settings/cloudflare/oauth/callback
-CLOUDFLARE_OAUTH_SCOPES=account-settings.read zone.read dns.write argotunnel.write
+CLOUDFLARE_OAUTH_SCOPES=account-settings.read zone.read dns.write argotunnel.write ssl-and-certificates.write
 ```
 
 Optional settings:
@@ -356,11 +374,30 @@ Optional settings:
 CLOUDFLARE_OAUTH_PROXY_URL=http://proxy.internal:3128
 ```
 
-The default scope IDs cover Account Read, Zone Read, DNS Write, and Cloudflare Tunnel Write. Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
+The required scope IDs cover Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write (`ssl-and-certificates.write`) for customer-domain HTTPS. Shelter always includes this minimum and `offline_access`, including when an older `CLOUDFLARE_OAUTH_SCOPES` value is present; additional configured scopes are preserved. Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
 
 ```sh
 docker compose up -d --force-recreate api
 ```
+
+### Upgrade an existing OAuth connection
+
+Allow `ssl-and-certificates.write` as a required scope in the existing private
+Cloudflare OAuth client before reconnecting. Keep its client ID, secret, callback
+URL, and existing permissions. A client that does not allow the new scope can
+reject authorization with `invalid_scope`.
+
+After updating Shelter, open **Settings → Cloudflare** and choose **Reconnect
+Cloudflare** in the permission warning. Approve the requested rights, return to
+Shelter, and confirm the existing account, tunnel, and panel hostname. Do not
+use **Disconnect** first. Shelter stages the replacement and only activates it
+after validation, preserving the current connection if consent fails or omits
+required rights. It does not silently upgrade an existing grant or rewrite its
+stored scopes. Existing project routes remain available while reconnecting.
+
+Then open **Cloudflare for SaaS — basic setup**, verify the existing fallback,
+and save it. New installations use the same scopes by default. API-token setup
+also includes **SSL and Certificates Edit** in its permission template.
 
 ### Finish setup in Shelter
 
@@ -379,7 +416,7 @@ Access and refresh tokens are encrypted under `APP_SECRET`. Disconnecting Cloudf
 
 ### API-token configuration
 
-For the guided token path, create a narrowly scoped Cloudflare API token with the same four permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
+For the guided token path, create a narrowly scoped Cloudflare API token with the same five permissions. Enter the account ID and token in the panel or set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `.env`. Shelter cannot revoke a token loaded from the environment.
 
 ### Cloudflare Access
 
@@ -532,6 +569,8 @@ not supported. Imports cannot alter authentication, routing, or provider setting
 
 Concurrent edits fail with a conflict instead of overwriting another saved
 profile. **Restore defaults** restores the original identity after confirmation.
+An untouched saved legacy default follows the current neutral theme without rewriting stored settings. Custom identities and palettes keep their configured appearance.
+
 Branding lives in the existing SQLite data volume and is included in normal
 backups. Technical identifiers, API paths, CLI/package names, Docker resources,
 source licensing, and deployed application content remain unchanged.
@@ -566,6 +605,7 @@ Start from `.env.example`. The most commonly changed settings are:
 | `CLOUDFLARE_API_TOKEN` | empty | Optional API-token fallback credential |
 | `CLOUDFLARE_OAUTH_*` | empty | Private OAuth-client configuration |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Optional host socket path |
+| `PROJECT_NETWORK_POOL` | empty | Optional reserved private `/16` for new project networks |
 
 The control subnet and fixed service IPs are also configurable. If the default `10.253.253.0/24` overlaps a VPS, VPN, or cloud network, change `CONTROL_SUBNET` and all four `*_CONTROL_IP` values together.
 

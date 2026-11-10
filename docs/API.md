@@ -29,11 +29,12 @@ The API currently follows the Shelter `1.0.0` contract. It is part of the MVP, s
 4. Give the token a purpose-specific name, choose its access level and expiration, then confirm with the current administrator password.
 5. Copy the secret immediately. Shelter stores only its hash and cannot show it again.
 
-Two access presets are available:
+Three access presets are available:
 
 | Preset | Scopes |
 | --- | --- |
 | Read only | `projects:read` |
+| Project domains only | `domains:write`, restricted to one selected project’s domain endpoints |
 | Deploy & manage | `projects:read`, `projects:write`, `deployments:write`, `uploads:write`, `domains:write`, `environment:write` |
 
 Tokens expire after at most 365 days. Revocation takes effect on the next request. Changing the administrator password revokes every active API token.
@@ -176,6 +177,10 @@ Use the Shelter CLI for this workflow unless direct HTTP integration is required
 
 List active Cloudflare zones with `GET /api/settings/cloudflare/zones`. Add a hostname with `POST /api/projects/{projectId}/domains` and remove it with `DELETE /api/projects/{projectId}/domains/{domainId}`. Domain mutations require a connected Cloudflare account and the `domains:write` scope.
 
+For external customer subdomains, send `{"hostname":"portal.customer.com","connection":"external"}` to the same creation endpoint. The operator must first configure Cloudflare for SaaS in Settings. HTTP 202 returns DNS instructions in `domain.external.records`. Repeating creation for the same project and external hostname returns the existing binding. Poll `GET /api/projects/{projectId}/domains/{domainId}` or call `POST /api/projects/{projectId}/domains/{domainId}/verify`; activate your app-side domain mapping only after `domain.status` is `active`. `GET /api/projects/{projectId}/domains` returns all bindings and their verification details.
+
+A **Project domains only** token is recommended for application integration. The token creation endpoint accepts `access: "domains"` with the required `projectId`, alongside the existing fields. Such tokens can only call that project's domain endpoints and read `GET /api/settings/external-domains`. The session-only `PUT /api/settings/external-domains` validates `{zoneId, cnameTarget}` without modifying the provider fallback. See [setup, both tenancy modes and recovery](EXTERNAL-DOMAINS.md).
+
 Configure sharing and search visibility with:
 
 ```http
@@ -271,3 +276,100 @@ accepts `{ profile, revision }`; `POST /api/settings/branding/reset` accepts
 returns `409 BRANDING_CONFLICT`; invalid fields or versions return `400 VALIDATION`.
 All fields are validated and unknown fields are rejected. Changes do not alter
 projects, credentials, hostnames, or provider resources.
+
+
+## Managed Supabase
+
+`GET /api/supabase` and `GET /api/supabase/:id` require `projects:read` and return
+instance, job, and backup metadata without credentials. `POST /api/supabase`
+requires both `projects:write` and `domains:write`, accepts `name`, `apiHostname`,
+`studioHostname`, `siteUrl`, optional `redirectUrls`, and optional `smtp`, and
+returns `202` with an instance and worker job ID.
+
+`POST /api/supabase/:id/actions` requires `deployments:write`. Supply `action`
+(`start`, `stop`, `backup`, `restore`, `rotate`, `rotate-keys`, or `archive`). Restore additionally
+requires a same-instance, same-version completed `backupId`. Restore, archive, and `rotate-keys`
+require `confirmation` equal to the instance name. `rotate` changes the Studio
+password only; `rotate-keys` invalidates API keys and user sessions. Busy instances return `409`.
+
+`POST /api/supabase/:id/credentials` requires an administrator browser session,
+CSRF, and `currentPassword`. It rejects personal API tokens and returns a
+non-cacheable sensitive response. `POST /api/supabase/:id/connections` requires
+`environment:write`, `projects:write`, and `deployments:write`. It takes `projectId`,
+optional `urlVariable`, `keyVariable`, `siteUrl`, and `replace`. Variable names default
+to the app's detected framework. It persists a managed connection and prepares only
+the public API URL and anon key; deployments are explicit. Exact app sign-in
+redirects may require a queued Auth restart. `GET /api/supabase/connections` requires
+`projects:read` and returns redacted connection status plus eligible app options.
+`DELETE /api/supabase/:id/connections/:projectId` requires `environment:write` and
+`projects:write`; it removes unchanged managed variables and preserves edited values.
+
+Creation also accepts `connection: { projectId, urlVariable?, keyVariable?, replace? }`.
+This requires `environment:write` in addition to the creation scopes. The app's active
+website supplies `siteUrl` if omitted. The connection is reserved atomically with
+the new instance and applied only after provisioning; conflicts reject the request.
+See [app connections](SUPABASE.md#auth-and-application-configuration) for status,
+reconnection, redirect and deployment behavior.
+
+The same lifecycle is available through `shelter supabase-list`,
+`supabase-instance`, `supabase-create`, `supabase-action`, and `supabase-connect`.
+Use `--input -` for JSON containing SMTP credentials. See [Supabase operations](SUPABASE.md)
+for network, backup, CLI compatibility, and production verification boundaries.
+
+
+## Global SMTP
+
+Global SMTP configuration, connection verification, test messages, and applying
+settings require a browser session and CSRF for mutations. Personal API tokens
+cannot read or change the global mail server. See [Global outgoing email](SMTP.md)
+for request fields, revision checks, and instance-consumer behavior.
+
+### Managed Edge Functions (browser session)
+
+`POST /api/supabase/:id/functions` requires an authenticated Shelter browser
+session and its CSRF token. The instance must be running and have no active
+operation. An empty JSON object enables the pinned Edge Runtime on an existing
+instance. `{ "name": "hello", "source": "Deno.serve(() => new Response('Hello'));" }`
+queues a single-file TypeScript deployment. Names use lowercase letters,
+digits, `_` and `-`, start with a letter, and cannot be `main`. Source is limited
+to 256 KiB and encrypted while queued. The response is `202 { "jobId": "..." }`;
+poll the instance's jobs for completion. This endpoint executes trusted
+administrator code with that Supabase instance's service credentials; personal
+API tokens cannot deploy functions. Invoke deployed functions at
+`/functions/v1/:name` on the instance's API hostname with a valid Supabase Bearer
+token. Function files are included in instance backups.
+
+
+### Supabase workspace operations
+
+Browser-session-only routes under `/api/supabase/:id` support `GET /functions`,
+`POST /functions/refresh`, `GET /functions/:name?versionId=...`,
+`POST /functions` (`name`, `source`, `expectedHash`), and
+`DELETE /functions/:name` (`expectedHash`). A null expected hash creates a new
+function; updates require the hash returned with the current source.
+`POST /functions/:name/invoke` accepts `method`, `body`, `query` and
+`auth: "anon" | "none"`. No service-role test mode is implicit.
+
+`POST /connections/:projectId/check` tests from the app's owned network namespace.
+`GET/PUT /backup-policy` manage `enabled`, `hourUtc`, `verifyWeekly`, `destination`
+and optional S3 settings. `POST /backup-policy/check` checks the saved destination.
+`POST /backups/:backupId/verify` runs an isolated restore test;
+`POST /backups/:backupId/upload` retries an external copy.
+
+All POST/PUT/DELETE operations require CSRF and return a queued `jobId` (policy
+PUT returns the saved redacted policy). Read a test's bounded, private result
+using `GET /operations/:jobId/result`. Instance job metadata includes the
+operation kind, phase and timestamps. Source, request bodies, responses and
+provider credentials are excluded from public job metadata. A failed action may
+coexist with a healthy running instance. Do not automatically repeat an
+interrupted function test: its application-side effects may already have happened.
+
+### Administrator login with a second factor
+
+For an administrator with two-factor authentication enabled, `POST /api/auth/login`
+returns `{ "mfaRequired": true }` and a short-lived `shelter_mfa` HttpOnly cookie,
+without creating an authenticated session. Submit the authenticator or recovery
+code to `POST /api/auth/mfa/challenge` using that cookie to obtain the usual
+session and CSRF token. Personal API tokens keep their existing scope model;
+MFA enrollment and removal require an authenticated browser session and CSRF
+protection. Enabling or disabling MFA revokes other sessions and personal tokens.

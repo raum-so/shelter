@@ -47,6 +47,6 @@
 
   var themeColor = document.querySelector('meta[name="theme-color"]');
   if (themeColor) {
-    themeColor.setAttribute('content', resolvedTheme === 'dark' ? '#061321' : '#f5f7fc');
+    themeColor.setAttribute('content', resolvedTheme === 'dark' ? '#111111' : '#ffffff');
   }
 })();

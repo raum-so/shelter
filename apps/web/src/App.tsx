@@ -1,3 +1,4 @@
+import { StudioLaunchPage } from "./pages/StudioLaunchPage";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -11,6 +12,9 @@ import { isStaleClientError, recoverFromStaleClientError } from './utils/stale-c
 import { localize, useI18n } from './i18n';
 import type { Session } from './types';
 
+const SmtpPage = lazy(() => import("./pages/SmtpPage").then(module => ({default:module.SmtpPage})));
+const SupabaseInstancePage = lazy(() => import("./pages/SupabaseInstancePage").then(module => ({default:module.SupabaseInstancePage})));
+const SupabasePage = lazy(() => import('./pages/SupabasePage').then(module => ({default:module.SupabasePage})));
 const SetupPage = lazy(() => import('./pages/SetupPage').then((module) => ({ default: module.SetupPage })));
 const OverviewPage = lazy(() => import('./pages/OverviewPage').then((module) => ({ default: module.OverviewPage })));
 const ProjectsPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
@@ -139,6 +143,9 @@ export function App() {
             <Route path="projects/:id" element={<ProjectPage />} />
             <Route path="projects/:id/deployments/:deploymentId" element={<DeploymentPage />} />
             <Route path="projects/:id/upload" element={<UploadProjectSourcePage />} />
+            <Route path="services" element={<SupabasePage />} />
+            <Route path="services/:id" element={<SupabaseInstancePage />} />
+            <Route path="studio/:id/launch" element={<StudioLaunchPage />} />
             <Route path="server" element={<ServerMetricsPage />} />
             <Route
               path="settings"
@@ -147,6 +154,7 @@ export function App() {
             <Route path="settings/cloudflare" element={<SettingsPage key="cloudflare" section="cloudflare" />} />
             <Route path="settings/github" element={<SettingsPage key="github" section="github" />} />
             <Route path="settings/branding" element={<BrandingPage />} />
+            <Route path="settings/smtp" element={<SmtpPage />} />
             <Route path="settings/api" element={<ApiSettingsPage />} />
             <Route path="settings/security" element={<SettingsPage key="security" section="security" />} />
             <Route path="settings/updates" element={<UpdatesPage />} />

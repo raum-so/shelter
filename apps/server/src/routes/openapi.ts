@@ -1,3 +1,5 @@
+import { smtpOpenApiPaths } from "../services/smtp-openapi.js";
+import { supabaseOpenApiPaths } from "../services/supabase-openapi.js";
 import type { Database } from "../lib/database.js";
 import { getBranding } from "../services/branding.js";
 import type { FastifyInstance } from "fastify";
@@ -43,9 +45,12 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
         { name: "Deployments" },
         { name: "Previews" },
         { name: "Uploads" },
-        { name: "Domains" }
+        { name: "Domains" },
+        { name: "Supabase" }
       ],
       paths: {
+        ...supabaseOpenApiPaths,
+        ...smtpOpenApiPaths,
         "/api/healthz": {
           get: { tags: ["System"], summary: `Check ${name} and worker health`, responses: { "200": { description: "Health state" } } }
         },
@@ -167,11 +172,27 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
         },
         "/api/projects/{projectId}/domains": {
           parameters: [{ $ref: "#/components/parameters/ProjectId" }],
-          post: { tags: ["Domains"], summary: "Connect a Cloudflare hostname", security: bearerSecurity, requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["hostname", "zoneId"], properties: { hostname: { type: "string" }, zoneId: { type: "string" } } } } } }, responses: { "201": { description: "Connected domain" }, "400": errorResponse, "409": errorResponse, "502": errorResponse } }
+          get: { tags: ["Domains"], summary: "List project domains with DNS instructions and verification status", security: bearerSecurity, responses: { "200": { description: "Domain list", content: { "application/json": { schema: { type: "object", properties: { domains: { type: "array", items: { $ref: "#/components/schemas/ProjectDomain" } } } } } } }, "401": errorResponse, "403": errorResponse, "404": errorResponse } },
+          post: { tags: ["Domains"], summary: "Connect a managed or external customer hostname", security: bearerSecurity,
+            description: "Requires domains:write. External connections are idempotent per project and hostname; returns DNS records to set at the customer provider. Domain-only tokens are restricted to their selected project.",
+            requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false, required: ["hostname"], properties: { hostname: { type: "string", maxLength: 253 }, connection: { type: "string", enum: ["cloudflare", "external"], default: "cloudflare" }, zoneId: { type: "string", description: "Managed Cloudflare connections only" } } } } } },
+            responses: { "201": { description: "Managed domain connected" }, "202": { description: "External connection pending", content: { "application/json": { schema: { type: "object", properties: { domain: { $ref: "#/components/schemas/ProjectDomain" } } } } } }, "400": errorResponse, "401": errorResponse, "403": errorResponse, "409": errorResponse, "502": errorResponse } }
         },
         "/api/projects/{projectId}/domains/{domainId}": {
           parameters: [{ $ref: "#/components/parameters/ProjectId" }, { name: "domainId", in: "path", required: true, schema: { type: "string" } }],
-          delete: { tags: ["Domains"], summary: "Remove a project domain", security: bearerSecurity, responses: { "204": { description: "Domain removed" }, "404": errorResponse, "502": errorResponse } }
+          get: { tags: ["Domains"], summary: "Read domain verification and DNS instructions", security: bearerSecurity, responses: { "200": { description: "Domain", content: { "application/json": { schema: { type: "object", properties: { domain: { $ref: "#/components/schemas/ProjectDomain" } } } } } }, "403": errorResponse, "404": errorResponse } },
+          delete: { tags: ["Domains"], summary: "Disable routing and remove the owned domain resource", security: bearerSecurity, description: "Customer DNS records are never deleted. Failed external cleanup remains quarantined and is retried.", responses: { "200": { description: "Domain removed" }, "403": errorResponse, "404": errorResponse, "409": errorResponse, "502": errorResponse } }
+        },
+        "/api/projects/{projectId}/domains/{domainId}/verify": {
+          parameters: [{ $ref: "#/components/parameters/ProjectId" }, { name: "domainId", in: "path", required: true, schema: { type: "string" } }],
+          post: { tags: ["Domains"], summary: "Recheck external domain ownership, DNS, HTTPS and routing", security: bearerSecurity, responses: { "200": { description: "Current verification state", content: { "application/json": { schema: { type: "object", properties: { domain: { $ref: "#/components/schemas/ProjectDomain" } } } } } }, "403": errorResponse, "404": errorResponse, "409": errorResponse, "429": errorResponse } }
+        },
+        "/api/settings/external-domains": {
+          get: { tags: ["Domains"], summary: "Read the configured target and suggested Shelter primary domain", security: bearerSecurity, responses: { "200": { description: "External-domain settings; suggestions are not activated until verified", content: { "application/json": { schema: { type: "object", properties: { externalDomains: { type: "object", required: ["configured", "zoneId", "cnameTarget", "suggestedZoneId", "suggestedCnameTarget"], properties: { configured: { type: "boolean" }, zoneId: { type: ["string", "null"] }, cnameTarget: { type: ["string", "null"] }, suggestedZoneId: { type: ["string", "null"] }, suggestedCnameTarget: { type: ["string", "null"] } } } } } } } }, "403": errorResponse } },
+          put: { tags: ["Domains"], summary: "Verify and save an existing Cloudflare for SaaS fallback", security: sessionSecurity,
+            description: "Browser session and CSRF required. Never changes provider fallback or DNS; verifies an active fallback and proxied CNAME to this installation's tunnel.",
+            requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false, required: ["zoneId", "cnameTarget"], properties: { zoneId: { type: "string", pattern: "^[a-fA-F0-9]{32}$" }, cnameTarget: { type: "string", maxLength: 253 } } } } } },
+            responses: { "200": { description: "Verified settings" }, "400": errorResponse, "403": errorResponse, "409": errorResponse, "502": errorResponse } }
         },
         "/api/uploads": {
           post: { tags: ["Uploads"], summary: "Initialize a chunked ZIP upload", security: bearerSecurity, requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["filename", "size"], properties: { filename: { type: "string" }, size: { type: "integer", minimum: 1 } } } } } }, responses: { "201": { description: "Upload allocation" }, "400": errorResponse } }
@@ -249,6 +270,19 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
           DeploymentId: { name: "deploymentId", in: "path", required: true, schema: { type: "string", pattern: "^dep_" } }
         },
         schemas: {
+          ProjectDomain: {
+            type: "object", required: ["id", "hostname", "status", "connection"],
+            properties: {
+              id: { type: "string" }, hostname: { type: "string" }, connection: { type: "string", enum: ["cloudflare", "external"] },
+              status: { type: "string", enum: ["pending", "active", "error"] }, error: { type: ["string", "null"] },
+              external: { type: "object", properties: {
+                phase: { type: "string", enum: ["ownership", "dns", "certificate", "deployment", "active", "removing", "error"] },
+                cnameTarget: { type: "string" }, ownershipVerified: { type: "boolean" }, dnsReady: { type: "boolean" },
+                hostnameStatus: { type: "string" }, tlsStatus: { type: "string" }, lastCheckedAt: { type: ["string", "null"] }, error: { type: ["string", "null"] },
+                records: { type: "array", items: { type: "object", required: ["type", "name", "value"], properties: { type: { type: "string", enum: ["CNAME", "TXT"] }, name: { type: "string" }, value: { type: "string" } } } }
+              } }
+            }
+          },
           Error: { type: "object", required: ["error", "code"], properties: { error: { type: "string" }, code: { type: "string" }, details: {} } },
           ProjectFileFact: {
             type: "object", additionalProperties: false, required: ["path"],

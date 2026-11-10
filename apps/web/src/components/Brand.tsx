@@ -20,7 +20,7 @@ export function Brand({ compact = false, inverse = false, linkTo = '/', showClai
   return (
     <Link
       className={cn(
-        'group inline-flex w-fit items-center gap-2.5 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+        'group inline-flex w-fit items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
         inverse ? 'text-sidebar-foreground' : 'text-foreground',
       )}
       to={linkTo}
@@ -28,7 +28,7 @@ export function Brand({ compact = false, inverse = false, linkTo = '/', showClai
     >
       <span
         className={cn(
-          'grid size-8 shrink-0 place-items-center rounded-[0.7rem] transition-transform group-hover:-translate-y-px',
+          'grid size-7 shrink-0 place-items-center rounded-lg',
           compact && 'size-7',
           wordmark && 'w-32',
         )}
@@ -37,11 +37,11 @@ export function Brand({ compact = false, inverse = false, linkTo = '/', showClai
         {light ? <>
           <img src={light} alt="" className="size-full object-contain dark:hidden" />
           <img src={dark ?? light} alt="" className="hidden size-full object-contain dark:block" />
-        </> : <ShelterFrog className="size-full drop-shadow-sm" />}
+        </> : <ShelterFrog className="size-full" />}
       </span>
       {!compact && !wordmark && (
         <span className="grid gap-0.5 leading-none">
-          <span className="text-2xl font-semibold tracking-[-0.05em]">{BRAND_NAME}</span>
+          <span className="text-xl font-semibold tracking-[-0.035em]">{BRAND_NAME}</span>
           {showClaim && <span className="text-[0.65rem] font-medium tracking-[0.06em] text-muted-foreground">{BRAND_CLAIM}</span>}
         </span>
       )}

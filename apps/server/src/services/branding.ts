@@ -65,15 +65,25 @@ export const DEFAULT_BRANDING: Branding = {
   version: 1, name: "Shelter", claim: "give your code a home",
   description: "Self-hosted deployments and domains on your own server.",
   logoLayout: "symbol", logoLight: null, logoDark: null, icon: null,
-  light: { primary: "#6652df", background: "#f5f7fc", foreground: "#17243b", surface: "#ffffff" },
-  dark: { primary: "#705be8", background: "#061321", foreground: "#f3f5fc", surface: "#0a1c2e" },
+  light: { primary: "#202020", background: "#ffffff", foreground: "#202020", surface: "#ffffff" },
+  dark: { primary: "#ededed", background: "#111111", foreground: "#ededed", surface: "#151515" },
   supportUrl: "", documentationUrl: "", privacyUrl: "", legalUrl: "", loginMessage: "", footer: ""
 };
 const setting = "platform.branding.v1";
 export function getBranding(database: Database): Branding {
   try {
     const saved = database.getSetting(setting);
-    return saved ? BrandingSchema.parse(JSON.parse(saved)) : DEFAULT_BRANDING;
+    if (!saved) return DEFAULT_BRANDING;
+    const profile = BrandingSchema.parse(JSON.parse(saved));
+    const legacy: Branding = { ...DEFAULT_BRANDING,
+      light: { primary: "#6652df", background: "#f5f7fc", foreground: "#17243b", surface: "#ffffff" },
+      dark: { primary: "#705be8", background: "#061321", foreground: "#f3f5fc", surface: "#0a1c2e" },
+    };
+    // An explicitly customized identity keeps its chosen palette. An untouched
+    // saved default follows the current theme without changing persisted data.
+    const untouched = (Object.keys(DEFAULT_BRANDING) as (keyof Branding)[])
+      .every(key => JSON.stringify(profile[key]) === JSON.stringify(legacy[key]));
+    return untouched ? DEFAULT_BRANDING : profile;
   } catch { return DEFAULT_BRANDING; }
 }
 export function brandingState(database: Database) {
