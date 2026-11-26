@@ -108,15 +108,13 @@ export function registerSettingsRoutes(app: FastifyInstance, cloudflare: Cloudfl
     });
   });
 
-  app.post("/api/settings/cloudflare/oauth/start", {
+  app.post<{ Body: unknown }>("/api/settings/cloudflare/oauth/start", {
     preHandler: requireSessionMutationAuth,
     config: { rateLimit: { max: 5, timeWindow: "10 minutes" } }
   }, async (request, reply) => {
-    if (request.body !== undefined && request.body !== null) {
-      return reply.code(400).send({ error: "Diese Anfrage akzeptiert keinen Body", code: "UNEXPECTED_BODY" });
-    }
+    const input = z.object({ includeRedirects: z.boolean().optional() }).strict().parse(request.body ?? {});
     const authentication = sessionAuthentication(request);
-    const started = cloudflare.startOAuth(authentication.user.id, authentication.sessionTokenHash);
+    const started = cloudflare.startOAuth(authentication.user.id, authentication.sessionTokenHash, input.includeRedirects);
     reply.setCookie(CLOUDFLARE_OAUTH_COOKIE, started.browserNonce, {
       path: CLOUDFLARE_OAUTH_CALLBACK_PATH,
       httpOnly: true,

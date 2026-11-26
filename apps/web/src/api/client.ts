@@ -19,6 +19,7 @@ import type {
   Domain,
   DomainAccessInput,
   ExternalDomainSettings,
+  AcmeRedirectPlan,
   EnvironmentVariable,
   GitHubBranch,
   GitHubPreviewCapability,
@@ -505,10 +506,16 @@ export const api = {
     return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains')).externalDomains;
   },
 
-  async configureExternalDomains(input: { zoneId: string; cnameTarget: string }) {
+  async configureExternalDomains(input: { zoneId: string; cnameTarget: string; redirectPlanToken?: string }) {
     return (await request<{ externalDomains: ExternalDomainSettings }>('/api/settings/external-domains', {
       method: 'PUT', body: JSON.stringify(input),
     })).externalDomains;
+  },
+
+  async planExternalDomainRedirects(input: { zoneId: string; cnameTarget: string }) {
+    return (await request<{ plan: AcmeRedirectPlan }>('/api/settings/external-domains/redirects/plan', {
+      method: 'POST', body: JSON.stringify(input),
+    })).plan;
   },
 
   async projectDomains(id: string) {
@@ -635,8 +642,10 @@ export const api = {
     }));
   },
 
-  startCloudflareOAuth() {
-    return request<CloudflareOAuthStartResult>('/api/settings/cloudflare/oauth/start', { method: 'POST' });
+  startCloudflareOAuth(includeRedirects = false) {
+    return request<CloudflareOAuthStartResult>('/api/settings/cloudflare/oauth/start', {
+      method: 'POST', ...(includeRedirects ? { body: JSON.stringify({ includeRedirects: true }) } : {}),
+    });
   },
 
   async disconnectCloudflare() {
