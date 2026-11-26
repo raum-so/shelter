@@ -1,11 +1,12 @@
 # Platform integration handoff
 
-This document is the entry point for agents continuing the 0.8.0 platform work.
+This document is the entry point for agents continuing the 0.8.x platform work.
 Read the repository's `AGENTS.md` first. Do not infer publication or production
 acceptance from a working source installation.
 
-The user-facing changes and upgrade instructions are in
-[the 0.8.0 release notes](releases/0.8.0.md).
+The user-facing changes and upgrade instructions are in the
+[0.8.0 release notes](releases/0.8.0.md) and
+[0.8.1 release notes](releases/0.8.1.md).
 
 ## Release scope
 
@@ -29,6 +30,43 @@ Only the worker controls Docker.
 ## Customer-domain contracts
 
 See [external domains](EXTERNAL-DOMAINS.md) for the API and operator workflow.
+
+### 0.8.1: automatic certificate-path exceptions
+
+Version 0.8.1 adds an opt-in Single Redirect exception flow to the shared SaaS
+setup. This is **not part of v0.8.0**. The automatic flow has been tested locally
+with provider fixtures; it has not been installed or tested against live
+provider mutations. The earlier live pilot used a manually approved Cloudflare
+rule edit. Verify publication through the immutable GitHub release, separately
+from this implementation and acceptance record.
+
+`CloudflareAcmeRedirects` previews complete rule expressions, binds a five-minute
+one-use token to the administrator session and connection, then patches only
+approved rules after re-reading them. Preserve complete writable rule fields:
+Cloudflare PATCH replaces a rule definition and is not an expression-only merge.
+Do not replace the whole ruleset, introduce a WAF bypass or disable HTTPS. The
+only excluded path prefix is `/.well-known/acme-challenge/`.
+
+`dynamic-redirect.write` is requested only through the feature-specific OAuth
+start option or to retain a previous grant. Do not add it to the universal
+minimum scopes. Existing setup calls without a redirect preview remain
+provider-read-only. Project-scoped API tokens cannot inspect or change rules.
+
+Original rules are encrypted in `cloudflare.acme_redirect_backup.<zone-id>`
+before the latest attempted update. Detected drift and unknown rule shapes stop
+the flow. Partial writes remain in place; re-preview shows only remaining
+exceptions. There is no documented provider CAS precondition, so avoid
+concurrent Cloudflare edits and do not promise an atomic multi-rule update.
+Bulk Redirects, Workers and other redirect sources still need operator review.
+
+Local verification on 2026-11-26: `npm run check` passed, including the existing
+installation/release checks, server/web/CLI suites and builds. The new setup
+regression fails against the prior route (missing preview endpoint) and passes
+with this implementation. Focused UI tests also cover permission failure during
+inspection and during apply. These are local mocked-provider tests, not a live
+Cloudflare acceptance test or evidence of publication/deployment.
+
+The following contracts apply to both the published base and this extension.
 
 - Domain management starts inside a project. Cloudflare for SaaS basic setup is
   shared across the installation and is requested only when needed.

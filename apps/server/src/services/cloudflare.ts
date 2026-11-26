@@ -18,6 +18,8 @@ import {
 } from "./cloudflare-access.js";
 import { panelHostnames, storePanelDomainTransition } from "./panel-domains.js";
 import { reconcileRouting } from "./routing.js";
+import { CloudflareAcmeRedirects } from "./cloudflare-acme-redirects.js";
+import { ACME_REDIRECT_SCOPE } from "../lib/cloudflare-scopes.js";
 
 interface CloudflareEnvelope<T> {
   success: boolean;
@@ -179,6 +181,13 @@ export interface CloudflareHostnameAvailability {
 
 export class CloudflareService {
   private readonly oauth: CloudflareOAuthService;
+  private readonly acmeRedirects = new CloudflareAcmeRedirects(async (client, zoneId) => {
+    try { return await client.request("GET", `/zones/${zoneId}/rulesets/phases/http_request_dynamic_redirect/entrypoint`); }
+    catch (error) {
+      if (error instanceof CloudflareApiError && error.upstreamStatus === 404) return null;
+      throw this.redirectPermissionError(error);
+    }
+  });
   private setupInProgress = false;
   private disconnectInProgress = false;
 
@@ -199,7 +208,9 @@ export class CloudflareService {
     };
   }
 
-  async configureExternalDomains(zoneId: string, target: string): Promise<ExternalDomainSettings> {
+  async configureExternalDomains(zoneId: string, target: string, redirects?: {
+    token: string; userId: string; sessionTokenHash: string;
+  }): Promise<ExternalDomainSettings> {
     const cnameTarget = normalizeHostname(target);
     const current = this.externalDomainSettings();
     if (this.database.sqlite.prepare("SELECT 1 FROM external_domains LIMIT 1").get()
@@ -215,6 +226,14 @@ export class CloudflareService {
       throw conflict("The connection target is already assigned", "DOMAIN_EXISTS");
     }
     await this.validateExternalDomainTarget(zoneId, cnameTarget);
+    if (redirects) {
+      const { client, owner } = await this.redirectContext(zoneId, cnameTarget, redirects);
+      try {
+        await this.acmeRedirects.apply(client, zoneId, owner, redirects.token, value => {
+          this.database.setSetting(`cloudflare.acme_redirect_backup.${zoneId}`, encryptString(JSON.stringify(value), this.config.APP_SECRET));
+        });
+      } catch (error) { throw this.redirectPermissionError(error); }
+    }
     this.database.sqlite.transaction(() => {
       const latest = this.externalDomainSettings();
       if (this.database.sqlite.prepare("SELECT 1 FROM external_domains LIMIT 1").get()
@@ -225,6 +244,29 @@ export class CloudflareService {
       this.database.setSetting("cloudflare.saas_cname_target", cnameTarget);
     }).immediate();
     return this.externalDomainSettings();
+  }
+
+  async planExternalDomainRedirects(zoneId: string, target: string, session: { userId: string; sessionTokenHash: string }) {
+    const cnameTarget = normalizeHostname(target);
+    await this.validateExternalDomainTarget(zoneId, cnameTarget);
+    const { client, owner } = await this.redirectContext(zoneId, cnameTarget, session);
+    return this.acmeRedirects.plan(client, zoneId, owner);
+  }
+
+  private async redirectContext(zoneId: string, cnameTarget: string, session: { userId: string; sessionTokenHash: string }) {
+    const { accountId, apiToken, authMethod } = await this.credentials();
+    if (authMethod === "oauth" && !this.oauth.active()?.scopes.includes(ACME_REDIRECT_SCOPE)) {
+      throw badRequest("Allow Dynamic URL Redirects Write in the Cloudflare OAuth client, then reconnect for automatic certificate validation exceptions.", "ACME_REDIRECT_PERMISSION_REQUIRED");
+    }
+    return { client: new CloudflareClient(apiToken), owner: JSON.stringify([
+      session.userId, session.sessionTokenHash, accountId, zoneId, cnameTarget, this.database.getSetting("cloudflare.tunnel_id")
+    ]) };
+  }
+
+  private redirectPermissionError(error: unknown): unknown {
+    return error instanceof CloudflareApiError && (error.upstreamStatus === 401 || error.upstreamStatus === 403)
+      ? badRequest("Automatic certificate validation exceptions need Dynamic URL Redirects Write (OAuth) or Dynamic URL Redirects Edit (API token) for this zone. Reconnect or update the token, then inspect again.", "ACME_REDIRECT_PERMISSION_REQUIRED")
+      : error;
   }
 
   async validateExternalDomainTarget(zoneId: string, cnameTarget: string): Promise<void> {
@@ -299,12 +341,12 @@ export class CloudflareService {
     }
   }
 
-  startOAuth(userId: string, sessionTokenHash: string): {
+  startOAuth(userId: string, sessionTokenHash: string, includeRedirects = false): {
     authorizationUrl: string;
     browserNonce: string;
     secureCookie: boolean;
   } {
-    return this.oauth.start({ userId, sessionTokenHash });
+    return this.oauth.start({ userId, sessionTokenHash, includeRedirects });
   }
 
   async completeOAuth(state: string, browserNonce: string, code: string): Promise<void> {

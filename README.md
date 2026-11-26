@@ -374,7 +374,7 @@ Optional settings:
 CLOUDFLARE_OAUTH_PROXY_URL=http://proxy.internal:3128
 ```
 
-The required scope IDs cover Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write (`ssl-and-certificates.write`) for customer-domain HTTPS. Shelter always includes this minimum and `offline_access`, including when an older `CLOUDFLARE_OAUTH_SCOPES` value is present; additional configured scopes are preserved. Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
+The required scope IDs cover Account Read, Zone Read, DNS Write, Cloudflare Tunnel Write, and SSL and Certificates Write (`ssl-and-certificates.write`) for customer-domain HTTPS. Shelter always includes this minimum and `offline_access`, including when an older `CLOUDFLARE_OAUTH_SCOPES` value is present; additional configured scopes are preserved. Automatic certificate-path exceptions optionally request `dynamic-redirect.write` (Dynamic URL Redirects Write) from SaaS basic setup; allow it in the private OAuth client before reconnecting. Existing grants are retained on later reconnects. See [automatic redirect setup and recovery](docs/EXTERNAL-DOMAINS.md#allow-certificate-validation-through-redirect-rules). Restrict access to the one account and only the zones Shelter needs. Recreate the API after changing OAuth variables:
 
 ```sh
 docker compose up -d --force-recreate api

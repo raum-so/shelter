@@ -47,6 +47,34 @@ async function scopeFixture(scope: string | undefined) {
 }
 
 describe("Cloudflare OAuth permission upgrades", () => {
+  it.each([false, true])("requests redirect rights only for the feature and validates the returned grant (requested: %s)", async includeRedirects => {
+    const f = await scopeFixture([...legacyScopes, "ssl-and-certificates.write"].join(" "));
+    try {
+      const flow = f.oauth.start({ userId: f.userId, sessionTokenHash: hashToken("scope-session"), includeRedirects });
+      const url = new URL(flow.authorizationUrl);
+      expect(url.searchParams.get("scope")!.split(" ").includes("dynamic-redirect.write")).toBe(includeRedirects);
+      const completion = f.oauth.complete(url.searchParams.get("state")!, flow.browserNonce, "provider-code");
+      if (includeRedirects) {
+        await expect(completion).rejects.toMatchObject({ code: "CLOUDFLARE_OAUTH_SCOPE_MISSING" });
+        expect(f.oauth.pending(f.userId)).toBeNull();
+        expect(f.revoked.sort()).toEqual(["replacement-access", "replacement-refresh"]);
+      } else await completion;
+      expect(f.oauth.active()?.accessToken).toBe("existing-access");
+    } finally { f.database.close(); }
+  });
+
+  it("retains an existing redirect grant on subsequent reconnects", async () => {
+    const f = await scopeFixture(undefined);
+    try {
+      f.database.setSetting("cloudflare.oauth_credentials", encryptString(JSON.stringify({ ...f.oauth.active(), scopes: [...legacyScopes, "ssl-and-certificates.write", "dynamic-redirect.write"] }), f.config.APP_SECRET));
+      const flow = f.oauth.start({ userId: f.userId, sessionTokenHash: hashToken("scope-session") });
+      const url = new URL(flow.authorizationUrl);
+      expect(url.searchParams.get("scope")!.split(" ")).toContain("dynamic-redirect.write");
+      await f.oauth.complete(url.searchParams.get("state")!, flow.browserNonce, "provider-code");
+      expect(f.oauth.pending(f.userId)?.scopes).toContain("dynamic-redirect.write");
+    } finally { f.database.close(); }
+  });
+
   it("does not persist an unusable empty grant from a refresh", async () => {
     const f = await scopeFixture("");
     try {

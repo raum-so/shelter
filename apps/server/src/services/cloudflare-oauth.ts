@@ -5,7 +5,7 @@ import type { AppConfig } from "../config.js";
 import type { Database } from "../lib/database.js";
 import { badRequest, upstreamError } from "../lib/errors.js";
 import { decryptString, encryptString, hashToken, randomToken } from "../lib/security.js";
-import { missingCloudflareScopes, parseCloudflareScopes, requestedCloudflareScopes } from "../lib/cloudflare-scopes.js";
+import { ACME_REDIRECT_SCOPE, missingCloudflareScopes, parseCloudflareScopes, requestedCloudflareScopes } from "../lib/cloudflare-scopes.js";
 
 const AUTHORIZE_URL = "https://dash.cloudflare.com/oauth2/auth";
 const TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
@@ -71,6 +71,7 @@ export interface CloudflareOAuthCandidate {
 interface StartInput {
   userId: string;
   sessionTokenHash: string;
+  includeRedirects?: boolean;
 }
 
 interface OAuthConfiguration {
@@ -128,6 +129,9 @@ export class CloudflareOAuthService {
       throw badRequest("Die Cloudflare-Verbindung wird gerade getrennt", "CLOUDFLARE_DISCONNECTING");
     }
     const oauth = this.requireConfiguration();
+    if (input.includeRedirects || this.active()?.scopes.includes(ACME_REDIRECT_SCOPE)) {
+      oauth.scopes = [...new Set([...oauth.scopes, ACME_REDIRECT_SCOPE])];
+    }
     const state = randomToken(32);
     const browserNonce = randomToken(32);
     const verifier = randomToken(64);

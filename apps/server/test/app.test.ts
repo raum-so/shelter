@@ -502,6 +502,20 @@ describe("Cloudflare OAuth", () => {
     await app.close();
   });
 
+  it("accepts only the feature-specific redirect permission request from an authenticated session", async () => {
+    const app = await testApp(oauthEnvironment);
+    try {
+      const auth = await login(app);
+      const headers = { cookie: `shelter_session=${auth.sessionCookie}`, "x-csrf-token": auth.csrfToken };
+      const response = await app.inject({ method: "POST", url: "/api/settings/cloudflare/oauth/start", headers, payload: { includeRedirects: true } });
+      expect(response.statusCode).toBe(200);
+      expect(new URL(response.json().authorizationUrl).searchParams.get("scope")!.split(" ")).toContain("dynamic-redirect.write");
+      for (const payload of [{ includeRedirects: "true" }, { includeRedirects: true, scopes: ["arbitrary.write"] }]) {
+        expect((await app.inject({ method: "POST", url: "/api/settings/cloudflare/oauth/start", headers, payload })).statusCode).toBe(400);
+      }
+    } finally { await app.close(); }
+  });
+
   it("uses PKCE, binds the callback to the original live session and stores only a pending connection", async () => {
     const accountId = "a".repeat(32);
     const providerFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {

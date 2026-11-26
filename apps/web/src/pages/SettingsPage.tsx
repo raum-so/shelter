@@ -310,7 +310,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
       });
     } else if (callbackStatus === 'permissions') {
       const title = t('Cloudflare permissions missing', 'Cloudflare-Rechte fehlen');
-      const message = t('Allow the required permissions in your Cloudflare OAuth client, including SSL and Certificates Write. Then reconnect Cloudflare. Your current connection has been kept.', 'Erlaube die benötigten Rechte im Cloudflare-OAuth-Client, einschließlich SSL and Certificates Write. Verbinde Cloudflare danach erneut. Die bisherige Verbindung bleibt erhalten.');
+      const message = t('Allow the required permissions in your Cloudflare OAuth client, including SSL and Certificates Write. Automatic certificate-path exceptions also need Dynamic URL Redirects Write; restart that connection from SaaS basic setup. Your current connection has been kept.', 'Erlaube die benötigten Rechte im Cloudflare-OAuth-Client, einschließlich SSL and Certificates Write. Automatische Ausnahmen für den Zertifikatspfad benötigen zusätzlich Dynamic URL Redirects Write; starte diese Neuverbindung in der SaaS-Grundeinrichtung. Die bisherige Verbindung bleibt erhalten.');
       setConnectionNotice({ tone: 'error', title, message });
       toast.error(title, { description: message, id: 'cloudflare-callback' });
     } else {
@@ -425,7 +425,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     },
   });
   const startOAuth = useMutation({
-    mutationFn: api.startCloudflareOAuth,
+    mutationFn: () => api.startCloudflareOAuth(),
     onMutate: () => toast.loading(t('Opening secure Cloudflare sign-in …', 'Sichere Cloudflare-Anmeldung wird geöffnet …'), { id: 'cloudflare-oauth' }),
     onSuccess: ({ authorizationUrl }) => {
       toast.dismiss('cloudflare-oauth');
@@ -1479,7 +1479,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
           )}
         </div>
 
-        {configured && <div className="xl:col-span-full"><ExternalDomainSettingsCard tunnelId={settings.data?.tunnelId} /></div>}
+        {configured && <div className="xl:col-span-full"><ExternalDomainSettingsCard tunnelId={settings.data?.tunnelId} authMethod={settings.data?.authMethod} oauthAvailable={settings.data?.oauthAvailable} /></div>}
         {!configured && <aside className="border-t pt-6 xl:sticky xl:top-8 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6" aria-labelledby="cloudflare-help-title">
           <h2 id="cloudflare-help-title" className="text-base font-semibold">{t('How it works', 'So funktioniert es')}</h2>
           <ol className="mt-4 grid gap-4">

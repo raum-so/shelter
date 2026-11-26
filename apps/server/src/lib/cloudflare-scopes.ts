@@ -1,3 +1,5 @@
+export const ACME_REDIRECT_SCOPE = "dynamic-redirect.write";
+
 export const CLOUDFLARE_REQUIRED_OAUTH_SCOPES = [
   "account-settings.read",
   "zone.read",
