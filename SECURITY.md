@@ -392,6 +392,16 @@ zone-wide provider settings. Only stored custom-hostname IDs with the expected h
 and no custom-origin drift can be deleted. Removal disables traffic first and
 persists failed cleanup for retry; it never removes customer DNS or the fallback.
 
+The optional automatic ACME-path exception is a separate, administrator-approved
+write to the selected zone's Single Redirect rules. Its preview and apply calls
+require a session and CSRF; project tokens cannot use them. OAuth requests
+`dynamic-redirect.write` only for this feature (or to retain an existing grant).
+The exclusion only matches `/.well-known/acme-challenge/`; WAF, Access, TLS
+settings and application paths are not changed. Full writable rule definitions
+are preserved, original rules are encrypted in a recovery snapshot, and detected
+drift stops the operation. Provider read/write races remain possible; avoid
+concurrent rule edits. See the operational guide for partial failure and recovery.
+
 Project-domain API tokens are restricted to one project's domain routes. Keep
 these tokens on the application's backend. Domain selection does not establish
 customer authorization: tenant data isolation, branding, host-scoped sessions and

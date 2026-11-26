@@ -5,12 +5,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/api/client';
 import { currentLocale, useI18n } from '@/i18n';
-import type { Domain, ExternalDomainDetails } from '@/types';
+import type { AcmeRedirectPlan, Domain, ExternalDomainDetails } from '@/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
+import { Checkbox } from './ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty';
@@ -22,10 +23,18 @@ import { DomainAccessSettings } from './DomainAccessSettings';
 
 function Failure({ error, retry }: { error: unknown; retry?: () => void }) {
   const { t } = useI18n();
+  const code = error instanceof ApiError && error.details && typeof error.details === 'object' && 'code' in error.details ? error.details.code : null;
+  const redirectErrors: Record<string, string> = {
+    ACME_REDIRECT_PERMISSION_REQUIRED: t('Automatic exceptions need Dynamic URL Redirects Write for OAuth, or Dynamic URL Redirects Edit for an API token. Allow this permission in the Cloudflare client and reconnect, or update the token for this zone.', 'Automatische Ausnahmen benötigen „Dynamic URL Redirects Write“ bei OAuth oder „Dynamic URL Redirects Edit“ beim API-Token. Erlaube das Recht im Cloudflare-Client und verbinde dich erneut, oder aktualisiere den Token für diese Zone.'),
+    ACME_REDIRECT_PLAN_EXPIRED: t('The preview expired. Check the setup again.', 'Die Vorschau ist abgelaufen. Prüfe die Grundeinrichtung erneut.'),
+    ACME_REDIRECT_DRIFT: t('The Cloudflare rules changed. Some exceptions may already be saved. Check the setup again to review the remaining changes.', 'Die Cloudflare-Regeln haben sich geändert. Einige Ausnahmen können bereits gespeichert sein. Prüfe die Grundeinrichtung erneut, um die verbleibenden Änderungen zu sehen.'),
+    ACME_REDIRECT_UNSUPPORTED: t('These redirect rules cannot be changed safely automatically. Add the certificate-path exception manually in Cloudflare, then turn off automatic setup below.', 'Diese Weiterleitungsregeln können nicht sicher automatisch angepasst werden. Ergänze die Ausnahme für den Zertifikatspfad manuell in Cloudflare und deaktiviere unten die automatische Einrichtung.'),
+    ACME_REDIRECT_BUSY: t('Another redirect update is running. Wait for it to finish, then check again.', 'Eine andere Änderung der Weiterleitungen läuft bereits. Warte kurz und prüfe danach erneut.'),
+  };
   return <Alert variant="destructive">
     <Info />
     <AlertTitle>{t('This request could not be completed', 'Die Anfrage konnte nicht abgeschlossen werden')}</AlertTitle>
-    <AlertDescription>{error instanceof Error ? error.message : t('Check the connection and try again.', 'Prüfe die Verbindung und versuche es erneut.')}</AlertDescription>
+    <AlertDescription>{typeof code === 'string' && redirectErrors[code] || (error instanceof Error ? error.message : t('Check the connection and try again.', 'Prüfe die Verbindung und versuche es erneut.'))}</AlertDescription>
     {retry && <Button variant="outline" size="sm" className="col-start-2 mt-2 w-fit" onClick={retry}>{t('Try again', 'Erneut versuchen')}</Button>}
   </Alert>;
 }
@@ -52,7 +61,9 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   </Button>;
 }
 
-export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | null }) {
+export function ExternalDomainSettingsCard({ tunnelId, authMethod, oauthAvailable }: {
+  tunnelId?: string | null; authMethod?: 'oauth' | 'api_token' | null; oauthAvailable?: boolean;
+}) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -63,6 +74,8 @@ export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | n
   const [editing, setEditing] = useState(Boolean(projectId));
   const [zoneId, setZoneId] = useState('');
   const [cnameTarget, setTarget] = useState('');
+  const [automaticRedirects, setAutomaticRedirects] = useState(true);
+  const [preview, setPreview] = useState<{ plan: AcmeRedirectPlan; zoneId: string; cnameTarget: string } | null>(null);
   const showForm = editing;
   const usesPrimaryDomain = Boolean(settings.data?.suggestedCnameTarget && cnameTarget === settings.data.suggestedCnameTarget);
   const zones = useQuery({ queryKey: ['external-domain-zones'], queryFn: () => api.cloudflareZones(), enabled: showForm });
@@ -76,14 +89,27 @@ export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | n
     }
   }, [settings.isSuccess]);
   const save = useMutation({
-    mutationFn: () => api.configureExternalDomains({ zoneId, cnameTarget }),
+    mutationFn: api.configureExternalDomains,
+    onError: () => setPreview(null),
     onSuccess: data => {
+      setPreview(null);
       queryClient.setQueryData(['external-domain-settings'], data);
       setEditing(false);
       toast.success(t('Cloudflare for SaaS setup saved', 'Cloudflare-for-SaaS-Grundeinrichtung gespeichert'));
       if (projectReturn) navigate(projectReturn);
     },
   });
+  const inspect = useMutation({
+    mutationFn: api.planExternalDomainRedirects,
+    onSuccess: (plan, input) => {
+      if (plan.changes.length) setPreview({ plan, ...input });
+      else save.mutate({ ...input, redirectPlanToken: plan.token });
+    },
+  });
+  const reconnect = useMutation({ mutationFn: () => api.startCloudflareOAuth(true), onSuccess: result => { window.location.assign(result.authorizationUrl); } });
+  const busy = save.isPending || inspect.isPending || reconnect.isPending;
+  const permissionRequired = [inspect.error, save.error].some(error => error instanceof ApiError && typeof error.details === 'object'
+    && error.details !== null && 'code' in error.details && error.details.code === 'ACME_REDIRECT_PERMISSION_REQUIRED');
   return <Card id="external-domains" className="scroll-mt-6">
     <CardHeader>
       <CardTitle>{t('Cloudflare for SaaS — basic setup', 'Cloudflare for SaaS – Grundeinrichtung')}</CardTitle>
@@ -99,7 +125,7 @@ export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | n
               {settings.data.configured ? <code className="mt-1 block break-all text-sm text-muted-foreground">{settings.data.cnameTarget}</code> : <><p className="mt-1 text-sm text-muted-foreground">{t('Only needed when a project uses external customer domains.', 'Nur erforderlich, wenn ein Projekt externe Kundendomains nutzen soll.')}</p>{settings.data.suggestedCnameTarget && <p className="mt-2 text-xs text-muted-foreground">{t('Suggested destination: your Shelter primary domain', 'Vorgeschlagenes Ziel: deine Shelter-Hauptdomain')} <code className="break-all">{settings.data.suggestedCnameTarget}</code></p>}</>}
             </div>
           </div>
-          <Button variant="outline" onClick={() => { setEditing(true); save.reset(); }}><Pencil data-icon="inline-start" />{settings.data.configured ? t('Edit basic setup', 'Grundeinrichtung bearbeiten') : t('Set up Cloudflare for SaaS', 'Cloudflare for SaaS einrichten')}</Button>
+          <Button variant="outline" onClick={() => { setEditing(true); save.reset(); inspect.reset(); }}><Pencil data-icon="inline-start" />{settings.data.configured ? t('Edit basic setup', 'Grundeinrichtung bearbeiten') : t('Set up Cloudflare for SaaS', 'Cloudflare for SaaS einrichten')}</Button>
         </div> : <>
           <div className="rounded-lg border bg-muted/30 p-4">
             <p className="text-sm font-medium">{t('First, in Cloudflare', 'Zuerst in Cloudflare')}</p>
@@ -117,10 +143,14 @@ export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | n
               <a className="text-muted-foreground underline underline-offset-4" href="https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/plans/" target="_blank" rel="noreferrer">{t('Check Cloudflare pricing', 'Cloudflare-Kosten prüfen')}</a>
             </div>
           </div>
-          <form id="external-domain-settings-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
+          <form id="external-domain-settings-form" onSubmit={event => {
+            event.preventDefault(); save.reset(); inspect.reset();
+            if (automaticRedirects) inspect.mutate({ zoneId, cnameTarget });
+            else save.mutate({ zoneId, cnameTarget });
+          }}>
             <FieldGroup>
               <Field><FieldLabel htmlFor="saas-zone">{t('Provider domain', 'Anbieter-Domain')}</FieldLabel>
-                <NativeSelect id="saas-zone" value={zoneId} disabled={save.isPending || zones.isPending} required onChange={event => {
+                <NativeSelect id="saas-zone" value={zoneId} disabled={busy || zones.isPending} required onChange={event => {
                   setZoneId(event.target.value);
                   const zone = zones.data?.find(item => item.id === event.target.value);
                   if (zone && !cnameTarget) setTarget(`connect.${zone.name}`);
@@ -132,22 +162,60 @@ export function ExternalDomainSettingsCard({ tunnelId }: { tunnelId?: string | n
               </Field>
               {zones.isError && <Failure error={zones.error} retry={() => { void zones.refetch(); }} />}
               <Field><FieldLabel htmlFor="saas-target">{t('Destination for customer CNAMEs', 'Ziel für Kunden-CNAMEs')}</FieldLabel>
-                <Input id="saas-target" value={cnameTarget} onChange={event => setTarget(event.target.value.trim().toLowerCase())} placeholder="connect.example.com" required disabled={save.isPending} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                <Input id="saas-target" value={cnameTarget} onChange={event => setTarget(event.target.value.trim().toLowerCase())} placeholder="connect.example.com" required disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                 <FieldDescription>{t('Use your Shelter primary domain or an existing dedicated fallback. Customers point their CNAME here. Existing connections keep their saved destination.', 'Verwende deine Shelter-Hauptdomain oder ein bestehendes eigenes Fallback-Ziel. Kunden richten ihren CNAME hierhin. Bestehende Verbindungen behalten ihr gespeichertes Ziel.')}</FieldDescription>
+              </Field>
+              <Field orientation="horizontal">
+                <Checkbox id="saas-acme-redirects" checked={automaticRedirects} disabled={busy} onCheckedChange={value => setAutomaticRedirects(value === true)} />
+                <div className="flex flex-col gap-2">
+                  <FieldLabel htmlFor="saas-acme-redirects">{t('Allow certificate validation automatically', 'Zertifikatsprüfung automatisch ermöglichen')}</FieldLabel>
+                  <FieldDescription>{t('Inspect enabled Single Redirects in this zone and preview an exception for /.well-known/acme-challenge/. Other paths keep their redirects. Requires Dynamic URL Redirects Write (OAuth) or Edit (API token).', 'Prüft aktive Single Redirects dieser Zone und zeigt eine Ausnahme für /.well-known/acme-challenge/ zur Freigabe an. Andere Pfade behalten ihre Weiterleitungen. Benötigt „Dynamic URL Redirects Write“ (OAuth) oder „Edit“ (API-Token).')}</FieldDescription>
+                  {!automaticRedirects && <FieldDescription>{t('Ensure the certificate path is excluded manually. Bulk Redirects, Workers and other rules must be checked separately.', 'Stelle die Ausnahme für den Zertifikatspfad manuell sicher. Bulk Redirects, Workers und andere Regeln müssen separat geprüft werden.')}</FieldDescription>}
+                </div>
               </Field>
             </FieldGroup>
           </form>
-          {save.isError && <Failure error={save.error} />}
+          {save.isError && <>
+            <Failure error={save.error} />
+            {save.variables?.redirectPlanToken && <p className="text-sm text-muted-foreground" role="status">{t('Some exceptions may already be saved. Check the setup again to review the remaining changes.', 'Einige Ausnahmen können bereits gespeichert sein. Prüfe die Grundeinrichtung erneut, um die verbleibenden Änderungen zu sehen.')}</p>}
+          </>}
+          {inspect.isError && <Failure error={inspect.error} />}
+          {permissionRequired && authMethod === 'oauth' && oauthAvailable && <Button variant="outline" disabled={busy} onClick={() => reconnect.mutate()}>{t('Reconnect for automatic exceptions', 'Für automatische Ausnahmen neu verbinden')}</Button>}
+          {permissionRequired && authMethod === 'api_token' && <Button asChild variant="outline"><a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer">{t('Edit Cloudflare API token', 'Cloudflare-API-Token bearbeiten')}<ExternalLink data-icon="inline-end" /></a></Button>}
+          {reconnect.isError && <Failure error={reconnect.error} />}
         </>}
       </>}
     </CardContent>
     {showForm && <CardFooter className="flex flex-wrap gap-3">
-      <Button type="submit" form="external-domain-settings-form" disabled={save.isPending || !zoneId || !cnameTarget || zones.isError}>
-        {save.isPending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-        {save.isPending ? t('Checking setup…', 'Grundeinrichtung wird geprüft …') : projectReturn ? t('Save and return to project', 'Speichern und zurück zum Projekt') : t('Verify and save setup', 'Grundeinrichtung prüfen und speichern')}
+      <Button type="submit" form="external-domain-settings-form" disabled={busy || !zoneId || !cnameTarget || zones.isError}>
+        {busy ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+        {busy ? t('Checking setup…', 'Grundeinrichtung wird geprüft …') : projectReturn ? t('Save and return to project', 'Speichern und zurück zum Projekt') : t('Verify and save setup', 'Grundeinrichtung prüfen und speichern')}
       </Button>
-      {!projectReturn && <Button variant="ghost" disabled={save.isPending} onClick={() => { setEditing(false); setZoneId(settings.data?.zoneId ?? settings.data?.suggestedZoneId ?? ''); setTarget(settings.data?.cnameTarget ?? settings.data?.suggestedCnameTarget ?? ''); }}>{t('Cancel', 'Abbrechen')}</Button>}
+      {!projectReturn && <Button variant="ghost" disabled={busy} onClick={() => { setEditing(false); setZoneId(settings.data?.zoneId ?? settings.data?.suggestedZoneId ?? ''); setTarget(settings.data?.cnameTarget ?? settings.data?.suggestedCnameTarget ?? ''); }}>{t('Cancel', 'Abbrechen')}</Button>}
     </CardFooter>}
+    <Dialog open={Boolean(preview)} onOpenChange={open => { if (!open && !save.isPending) setPreview(null); }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{t('Review certificate exception', 'Ausnahme für Zertifikatsprüfung prüfen')}</DialogTitle>
+          <DialogDescription>{t('Shelter will exclude the public certificate path from the following Single Redirects for this zone. Redirect destinations and other conditions are preserved. Bulk Redirects, Workers and other rules are not checked.', 'Shelter nimmt den öffentlichen Zertifikatspfad aus den folgenden Single Redirects dieser Zone aus. Weiterleitungsziele und andere Bedingungen bleiben erhalten. Bulk Redirects, Workers und andere Regeln werden nicht geprüft.')}</DialogDescription>
+        </DialogHeader>
+        <div className="flex max-h-[50vh] flex-col gap-4 overflow-y-auto">
+          {preview?.plan.changes.map(change => <div key={change.id} className="flex flex-col gap-2 rounded-md border p-3">
+            <p className="text-sm font-medium">{change.description}</p>
+            <dl className="flex flex-col gap-2 text-xs">
+              <div><dt className="text-muted-foreground">{t('Before', 'Vorher')}</dt><dd><code className="whitespace-pre-wrap break-all">{change.before}</code></dd></div>
+              <div><dt className="text-muted-foreground">{t('After', 'Nachher')}</dt><dd><code className="whitespace-pre-wrap break-all">{change.after}</code></dd></div>
+            </dl>
+          </div>)}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={save.isPending} onClick={() => setPreview(null)}>{t('Cancel', 'Abbrechen')}</Button>
+          <Button disabled={save.isPending || !preview} onClick={() => {
+            if (preview) save.mutate({ zoneId: preview.zoneId, cnameTarget: preview.cnameTarget, redirectPlanToken: preview.plan.token });
+          }}>{save.isPending && <LoaderCircle className="animate-spin" data-icon="inline-start" />}{t('Apply exception and save', 'Ausnahme anwenden und speichern')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </Card>;
 }
 

@@ -29,8 +29,11 @@ that link opens the basic setup and returns you to the same project afterward.
    in Shelter. Keep the existing connection until its replacement is verified.
    API-token setup includes **SSL and Certificates Edit** in its template; scope
    it to this zone.
-6. In Shelter, choose **Verify and save setup** (or **Save and return to project**
-   when you started from a project).
+6. Keep **Allow certificate validation automatically** selected. Choose **Verify
+   and save setup** (or **Save and return to project**). Shelter inspects the
+   zone's enabled Single Redirects, shows the proposed changes, then applies
+   them only after **Apply exception and save**. No change is needed when there
+   are no Single Redirects or they already contain Shelter's exception.
 
 You can keep using an existing dedicated fallback such as `connect.example.com`.
 For a new dedicated fallback, create a proxied CNAME to this installation's
@@ -42,6 +45,45 @@ This shared setup is optional and remains collapsed until you open it. Configure
 it once per Shelter installation, not once per project.
 
 ### Allow certificate validation through redirect rules
+
+Automatic setup requires **Dynamic URL Redirects Write**
+(`dynamic-redirect.write`) for OAuth, or the zone-scoped **Dynamic URL Redirects
+Edit** API-token permission. This permission is optional for normal Shelter
+operation. The setup's **Reconnect for automatic exceptions** action requests
+it; first allow this scope in your private Cloudflare OAuth client. Complete
+the existing account/tunnel adoption flow without disconnecting, then return to
+SaaS basic setup. Later reconnects retain this permission if already granted.
+The general API-token template retains its minimum permissions; add this
+optional permission to your token for automatic exceptions.
+
+The preview lists the original and proposed expressions. Shelter wraps each
+enabled Single Redirect's expression with an exclusion for the ACME path. This
+applies to that path across the selected zone's redirect rules, including other
+hostnames served by those rules. Redirect targets, status codes, query handling,
+other conditions, disabled rules and rule ordering are preserved. Unknown rule
+fields, oversized rulesets or expressions stop automatic setup for manual review.
+Bulk Redirects, Workers, Page Rules, WAF and application redirects are outside
+this check; a successful setup is not an end-to-end certificate test.
+
+Previews expire after five minutes or an API restart and are bound to the
+administrator session, account, zone, CNAME target and tunnel. Shelter re-reads
+the rules before changes and verifies them afterward. Do not edit the rules
+concurrently: Cloudflare's rule update API has no documented atomic version
+precondition, so a read/write race cannot be fully excluded. Shelter updates
+individual rules, never replaces the complete ruleset, and stops on detected
+drift. A partial failure leaves completed exceptions in place; inspect again to
+review and apply only the remaining changes. Setup is saved only after the
+requested changes succeed. No automatic rollback overwrites operator edits.
+
+Before writing, Shelter saves the latest attempt's original ruleset encrypted
+under `cloudflare.acme_redirect_backup.<zone-id>` in its settings database.
+Keep the database and `APP_SECRET` backed up. For recovery, compare the current
+rule with the preview and the earlier Cloudflare rule version before restoring
+only the intended expression. Do not restore a whole old ruleset over newer
+operator changes. Disabling automatic setup does not remove existing exceptions.
+
+If you do not grant the optional permission, clear the checkbox and configure
+the following exception manually before onboarding customer domains.
 
 Custom **Redirect Rules** must not redirect the HTTP certificate-validation
 path to HTTPS before a certificate exists. Exclude
@@ -174,6 +216,16 @@ The settings response also includes `suggestedZoneId` and `suggestedCnameTarget`
 derived from the current Shelter primary domain. These are suggestions, not an
 activated connection. The OpenAPI document at `/api/openapi.json` describes the
 request and response.
+
+The administrator-only setup API can preview these changes with
+`POST /api/settings/external-domains/redirects/plan` and `{zoneId, cnameTarget}`.
+It returns `{plan: {token, expiresAt, changes}}`; each change includes `id`,
+`description`, `before` and `after`. Pass `redirectPlanToken: plan.token` alongside
+the same setup fields to `PUT /api/settings/external-domains` to apply them.
+Both calls require a browser session and CSRF token. Omitting the preview token
+preserves the existing read-only provider setup behavior. Project API tokens
+cannot inspect or change these zone-wide rules. Expired previews and detected
+drift return HTTP 409; missing permissions and unsupported rules return HTTP 400.
 
 `domain.external.phase` is one of `ownership`, `dns`, `certificate`, `deployment`,
 `active`, `removing`, or `error`. Only `domain.status === "active"` means routed.

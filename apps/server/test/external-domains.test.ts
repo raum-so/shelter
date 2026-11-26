@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { Database } from "../src/lib/database.js";
-import { encryptString } from "../src/lib/security.js";
+import { decryptString, encryptString } from "../src/lib/security.js";
 import { CloudflareService } from "../src/services/cloudflare.js";
 import { ExternalDomains } from "../src/services/external-domains.js";
 import { ProjectDeletionService } from "../src/services/project-deletion.js";
@@ -95,6 +95,141 @@ async function fixture(environment: NodeJS.ProcessEnv = {}) {
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
   vi.restoreAllMocks(); vi.unstubAllGlobals();
+});
+
+const redirectGuard = 'not starts_with(http.request.uri.path, "/.well-known/acme-challenge/")';
+const redirectRule = (number: number, expression = '(http.request.scheme eq "http")') => ({
+  id: String(number).repeat(32), version: "1", description: `Redirect ${number}`, enabled: true,
+  ref: `redirect-${number}`, action: "redirect", expression,
+  action_parameters: { from_value: { status_code: 301, target_url: { expression: 'concat("https://", http.host, http.request.uri.path)' }, preserve_query_string: true } },
+  logging: { enabled: true }
+});
+
+function redirectProvider(f: Awaited<ReturnType<typeof fixture>>, rules: Array<Record<string, unknown>> | null) {
+  const original = f.provider.getMockImplementation()!;
+  const state = { ruleset: rules === null ? null : { id: "d".repeat(32), kind: "zone", phase: "http_request_dynamic_redirect", version: "1", rules: structuredClone(rules) },
+    writes: [] as Array<Record<string, unknown>>, denied: false, failWrite: 0 };
+  f.provider.mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    if (!url.pathname.includes("/rulesets/")) return original(input, init);
+    const method = init?.method ?? "GET";
+    f.calls.push({ method, path: url.pathname });
+    if (state.denied) return Response.json({ success: false }, { status: 403 });
+    if (!state.ruleset) return Response.json({ success: false }, { status: 404 });
+    if (method === "PATCH") {
+      if (state.failWrite === state.writes.length + 1) return Response.json({ success: false }, { status: 503 });
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      state.writes.push(body);
+      const index = state.ruleset.rules.findIndex(rule => rule.id === url.pathname.split("/").at(-1));
+      if (index < 0) throw new Error("Unknown rule");
+      // Cloudflare replaces a rule definition: omitted action fields are lost.
+      state.ruleset.rules[index] = { id: state.ruleset.rules[index]!.id, ...body, version: String(state.writes.length + 1) };
+      state.ruleset.version = String(state.writes.length + 1);
+    }
+    return Response.json({ success: true, result: structuredClone(state.ruleset) });
+  });
+  f.database.deleteSetting("cloudflare.saas_zone_id");
+  f.database.deleteSetting("cloudflare.saas_cname_target");
+  return state;
+}
+
+const planPath = "/api/settings/external-domains/redirects/plan";
+const setupPath = "/api/settings/external-domains";
+const setupPayload = { zoneId, cnameTarget: target };
+
+describe("certificate redirect setup API", () => {
+  it("previews before writing, preserves complete redirect actions and order, and is idempotent", async () => {
+    const f = await fixture();
+    const original = [redirectRule(1), { ...redirectRule(2), enabled: false }, redirectRule(3, `((http.host eq "other.example") and ${redirectGuard}) or true`)];
+    const provider = redirectProvider(f, original);
+    const inspected = await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload });
+    expect(inspected.statusCode).toBe(200);
+    const plan = inspected.json().plan;
+    expect(plan.changes.map((rule: { id: string }) => rule.id)).toEqual([original[0]!.id, original[2]!.id]);
+    expect(provider.writes).toHaveLength(0);
+    expect(f.database.getSetting("cloudflare.saas_zone_id")).toBeUndefined();
+    const saved = await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: plan.token } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().externalDomains.configured).toBe(true);
+    expect(provider.ruleset!.rules.map(rule => rule.id)).toEqual(original.map(rule => rule.id));
+    for (const index of [0, 2]) {
+      expect(provider.ruleset!.rules[index]).toMatchObject({ ...original[index], version: String(index === 0 ? 2 : 3), expression: `(${original[index]!.expression}) and ${redirectGuard}` });
+    }
+    expect(provider.ruleset!.rules[1]).toEqual(original[1]);
+    const backup = JSON.parse(decryptString(f.database.getSetting(`cloudflare.acme_redirect_backup.${zoneId}`)!, f.config.APP_SECRET));
+    expect(backup.ruleset.rules).toEqual(original);
+    const again = await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload });
+    expect(again.json().plan.changes).toEqual([]);
+    await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: again.json().plan.token } });
+    expect(provider.writes).toHaveLength(2);
+    expect(f.calls.filter(call => call.method !== "GET").every(call => call.method === "PATCH" && call.path.includes("/rulesets/"))).toBe(true);
+  });
+
+  it.each(["drift", "session", "expiry"])("rejects a stale or mismatched preview (%s) without provider writes", async reason => {
+    const f = await fixture(); const provider = redirectProvider(f, [redirectRule(1)]);
+    const plan = (await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload })).json().plan;
+    let headers = f.headers;
+    if (reason === "drift") provider.ruleset!.rules[0]!.description = "Changed by operator";
+    if (reason === "session") {
+      const login = await f.app.inject({ method: "POST", url: "/api/auth/login", payload: { email: "admin@example.com", password: "test admin password" } });
+      headers = { ...headers, cookie: `shelter_session=${login.cookies.find(c => c.name === "shelter_session")!.value}`, "x-csrf-token": login.json().csrfToken };
+    }
+    if (reason === "expiry") vi.spyOn(Date, "now").mockReturnValue(Date.now() + 6 * 60_000);
+    const result = await f.app.inject({ method: "PUT", url: setupPath, headers,
+      payload: { ...setupPayload, redirectPlanToken: plan.token } });
+    expect(result.statusCode).toBe(409);
+    expect(result.json().code).toBe(reason === "drift" ? "ACME_REDIRECT_DRIFT" : "ACME_REDIRECT_PLAN_EXPIRED");
+    expect(provider.writes).toHaveLength(0);
+    expect(f.database.getSetting("cloudflare.saas_zone_id")).toBeUndefined();
+  });
+
+  it.each([null, [{ ...redirectRule(1), expression: `((http.request.scheme eq "http")) and ${redirectGuard}` }]])("saves without writes when no exception is needed: %j", async rules => {
+    const f = await fixture(); const provider = redirectProvider(f, rules);
+    const response = await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().plan.changes).toEqual([]);
+    const result = await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: response.json().plan.token } });
+    expect(result.statusCode).toBe(200);
+    expect(provider.writes).toHaveLength(0);
+  });
+
+  it.each(["permission", "unknown field", "unsupported action"])("requires manual attention instead of unsafe changes (%s)", async reason => {
+    const f = await fixture(); const provider = redirectProvider(f, [{ ...redirectRule(1), ...(reason === "unknown field" ? { future_option: true } : {}), ...(reason === "unsupported action" ? { action: "execute" } : {}) }]);
+    provider.denied = reason === "permission";
+    const response = await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe(reason === "permission" ? "ACME_REDIRECT_PERMISSION_REQUIRED" : "ACME_REDIRECT_UNSUPPORTED");
+    expect(provider.writes).toHaveLength(0);
+    expect(f.database.getSetting("cloudflare.saas_zone_id")).toBeUndefined();
+  });
+
+  it("keeps partial results visible, requires a new preview and retries only remaining rules", async () => {
+    const f = await fixture(); const provider = redirectProvider(f, [redirectRule(1), redirectRule(2)]);
+    const plan = (await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload })).json().plan;
+    provider.failWrite = 2;
+    const failed = await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: plan.token } });
+    expect(failed.statusCode).toBe(502);
+    expect(provider.writes).toHaveLength(1);
+    expect(f.database.getSetting("cloudflare.saas_zone_id")).toBeUndefined();
+    const replay = await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: plan.token } });
+    expect(replay.json().code).toBe("ACME_REDIRECT_PLAN_EXPIRED");
+    provider.failWrite = 0;
+    const next = (await f.app.inject({ method: "POST", url: planPath, headers: f.headers, payload: setupPayload })).json().plan;
+    expect(next.changes.map((rule: { id: string }) => rule.id)).toEqual([redirectRule(2).id]);
+    const saved = await f.app.inject({ method: "PUT", url: setupPath, headers: f.headers, payload: { ...setupPayload, redirectPlanToken: next.token } });
+    expect(saved.statusCode).toBe(200);
+    expect(provider.writes).toHaveLength(2);
+  });
+
+  it("requires a CSRF-protected admin session to inspect rules", async () => {
+    const f = await fixture(); const provider = redirectProvider(f, [redirectRule(1)]);
+    for (const headers of [{}, { cookie: f.headers.cookie }]) {
+      const result = await f.app.inject({ method: "POST", url: planPath, headers, payload: setupPayload });
+      expect([401, 403]).toContain(result.statusCode);
+    }
+    expect(provider.writes).toHaveLength(0);
+    expect(f.calls).toHaveLength(0);
+  });
 });
 
 describe("external customer domain lifecycle", () => {
@@ -329,6 +464,7 @@ describe("external customer domain lifecycle", () => {
     expect((await f.app.inject({ method: "GET", url: "/api/projects/other/domains", headers })).statusCode).toBe(403);
     expect((await f.app.inject({ method: "GET", url: "/api/projects", headers })).statusCode).toBe(403);
     expect((await f.app.inject({ method: "GET", url: "/api/settings/cloudflare/zones", headers })).statusCode).toBe(403);
+    expect((await f.app.inject({ method: "POST", url: planPath, headers, payload: setupPayload })).statusCode).toBe(403);
     expect((await f.app.inject({ method: "POST", url: "/api/projects/app/deploy", headers })).statusCode).toBe(403);
     const created = await f.app.inject({ method: "POST", url: "/api/projects/app/domains", headers,
       payload: { hostname: "token.customer.example", connection: "external" } });

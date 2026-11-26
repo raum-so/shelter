@@ -81,6 +81,12 @@ export interface ExternalDomainSettings {
   suggestedCnameTarget: string | null;
 }
 
+export interface AcmeRedirectPlan {
+  token: string;
+  expiresAt: string;
+  changes: Array<{ id: string; description: string; before: string; after: string }>;
+}
+
 export interface ExternalDomainDetails {
   phase: 'ownership' | 'dns' | 'certificate' | 'deployment' | 'active' | 'removing' | 'error';
   cnameTarget: string;
