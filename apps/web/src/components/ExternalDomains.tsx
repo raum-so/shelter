@@ -223,7 +223,7 @@ function connectionLabel(domain: Domain, t: ReturnType<typeof useI18n>['t']): st
   if (!domain.external) return domain.status === 'active' ? t('Connected', 'Verbunden') : domain.status === 'error' ? t('Setup failed', 'Einrichtung fehlgeschlagen') : t('Setting up DNS', 'DNS wird eingerichtet');
   const labels: Record<ExternalDomainDetails['phase'], string> = {
     ownership: t('Confirm ownership', 'Besitz bestätigen'),
-    dns: t('Set CNAME', 'CNAME einrichten'),
+    dns: domain.external.dnsMode === 'apex' ? t('Set apex DNS', 'DNS für Hauptdomain einrichten') : t('Set CNAME', 'CNAME einrichten'),
     certificate: t('HTTPS is being prepared', 'HTTPS wird vorbereitet'),
     deployment: t('Waiting for deployment', 'Warte auf Deployment'),
     active: t('Connected', 'Verbunden'),
@@ -242,9 +242,11 @@ function DnsInstructions({ domain }: { domain: Domain }) {
       <h4 className="text-sm font-medium">{t('DNS records for the customer', 'DNS-Einträge für den Kunden')}</h4>
       <CopyButton value={instructions} label={t('Copy all DNS instructions', 'Gesamte DNS-Anleitung kopieren')} />
     </div>
-    <p className="text-sm text-muted-foreground">{t('Add these records at the customer’s DNS provider. Keep the customer CNAME set to DNS only, without a proxy.', 'Lege diese Einträge beim DNS-Anbieter des Kunden an. Verwende für den Kunden-CNAME „Nur DNS“, ohne Proxy.')}</p>
+    <p className="text-sm text-muted-foreground">{detail.dnsMode === 'apex'
+      ? t('Set an ALIAS, ANAME or flattened CNAME at the zone root (@). Use the hostname below as the destination and select DNS only if the provider offers a proxy.', 'Lege an der Hauptdomain (@) einen ALIAS, ANAME oder CNAME mit Flattening an. Verwende den Hostnamen unten als Ziel und wähle „Nur DNS“, falls der Anbieter einen Proxy anbietet.')
+      : t('Add these records at the customer’s DNS provider. Keep the customer CNAME set to DNS only, without a proxy.', 'Lege diese Einträge beim DNS-Anbieter des Kunden an. Verwende für den Kunden-CNAME „Nur DNS“, ohne Proxy.')}</p>
     {detail.records.map((record, index) => <div key={`${record.name}-${index}`} className="rounded-lg border bg-background p-3 sm:p-4">
-      <div className="mb-3 flex items-center gap-2"><Badge variant="outline">{record.type}</Badge><span className="text-xs text-muted-foreground">{record.type === 'CNAME' ? t('Routes visitors to the app', 'Leitet Besucher zur App') : t('Confirms domain ownership or HTTPS', 'Bestätigt Domainbesitz oder HTTPS')}</span></div>
+      <div className="mb-3 flex items-center gap-2"><Badge variant="outline">{record.type}</Badge><span className="text-xs text-muted-foreground">{record.type === 'TXT' ? t('Confirms domain ownership or HTTPS', 'Bestätigt Domainbesitz oder HTTPS') : t('Routes visitors to the app', 'Leitet Besucher zur App')}</span></div>
       <dl className="flex flex-col gap-3">
         {[[t('Name / host', 'Name / Host'), record.name], [t('Value / destination', 'Wert / Ziel'), record.value]].map(([label, value]) => <div key={label}>
           <dt className="mb-1 text-xs text-muted-foreground">{label}</dt>
@@ -260,6 +262,7 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const detail = domain.external!;
+  const apex = detail.dnsMode === 'apex';
   const verify = useMutation({ mutationFn: () => api.verifyExternalDomain(projectId, domain.id), onSuccess: updated => {
     queryClient.setQueryData<Domain[]>(['project-domains', projectId], current => current?.map(item => item.id === updated.id ? updated : item));
     if (updated.status === 'active') {
@@ -270,7 +273,9 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
       const waiting = updated.external?.phase === 'ownership'
         ? t('The TXT proof is not visible through public DNS yet. Check the record and allow time for DNS caches to update.', 'Der TXT-Nachweis ist über öffentliche DNS-Server noch nicht sichtbar. Prüfe den Eintrag und warte, bis sich die DNS-Caches aktualisiert haben.')
         : updated.external?.phase === 'dns'
-          ? t('The expected CNAME is not visible through public DNS yet.', 'Der erwartete CNAME ist über öffentliche DNS-Server noch nicht sichtbar.')
+          ? apex
+            ? t('The apex DNS answers do not match the Shelter destination yet.', 'Die öffentlichen DNS-Antworten der Hauptdomain stimmen noch nicht mit dem Shelter-Ziel überein.')
+            : t('The expected CNAME is not visible through public DNS yet.', 'Der erwartete CNAME ist über öffentliche DNS-Server noch nicht sichtbar.')
           : updated.external?.phase === 'certificate'
             ? t('DNS is verified. Cloudflare is still preparing the HTTPS certificate.', 'DNS ist bestätigt. Cloudflare bereitet noch das HTTPS-Zertifikat vor.')
             : t('Domain and HTTPS are ready. The project needs an active deployment.', 'Domain und HTTPS sind bereit. Das Projekt benötigt ein aktives Deployment.');
@@ -286,14 +291,18 @@ function ExternalDomainDetail({ projectId, domain, disabled }: { projectId: stri
   } });
   const steps = [
     { title: t('Ownership', 'Besitznachweis'), done: detail.ownershipVerified },
-    { title: 'CNAME', done: detail.dnsReady },
+    { title: apex ? 'ALIAS / Flattening' : 'CNAME', done: detail.dnsReady },
     { title: 'HTTPS', done: detail.hostnameStatus === 'active' && detail.tlsStatus === 'active' },
     { title: t('App available', 'App erreichbar'), done: domain.status === 'active' },
   ];
   const guidance: Record<ExternalDomainDetails['phase'], string> = {
     ownership: t('Add the TXT record below to confirm control of this domain.', 'Füge den TXT-Eintrag unten hinzu, um den Besitz dieser Domain zu bestätigen.'),
-    dns: t('Point the customer CNAME to the destination below. DNS updates can take a while to appear.', 'Richte den Kunden-CNAME auf das Ziel unten. DNS-Änderungen können etwas Zeit benötigen.'),
-    certificate: t('Cloudflare is issuing the HTTPS certificate. Shelter checks automatically; no deployment is needed for this step.', 'Cloudflare stellt das HTTPS-Zertifikat aus. Shelter prüft automatisch; für diesen Schritt ist kein Deployment nötig.'),
+    dns: apex
+      ? t('Public DNS does not match the Shelter destination yet. Check the ALIAS or flattened CNAME and allow time for DNS updates.', 'Öffentliches DNS stimmt noch nicht mit dem Shelter-Ziel überein. Prüfe den ALIAS oder CNAME mit Flattening und warte auf die DNS-Aktualisierung.')
+      : t('Point the customer CNAME to the destination below. DNS updates can take a while to appear.', 'Richte den Kunden-CNAME auf das Ziel unten. DNS-Änderungen können etwas Zeit benötigen.'),
+    certificate: apex && detail.hostnameStatus !== 'active' && detail.records.length > 2
+      ? t('Add the additional TXT records shown below so Cloudflare can finish validation.', 'Ergänze die unten angezeigten TXT-Einträge, damit Cloudflare die Prüfung abschließen kann.')
+      : t('Cloudflare is issuing the HTTPS certificate. Shelter checks automatically; no deployment is needed for this step.', 'Cloudflare stellt das HTTPS-Zertifikat aus. Shelter prüft automatisch; für diesen Schritt ist kein Deployment nötig.'),
     deployment: t('Domain and HTTPS are ready. Deploy the project to make the app available.', 'Domain und HTTPS sind bereit. Deploye das Projekt, damit die App erreichbar wird.'),
     active: t('Visitors reach this project securely through the customer domain. Your app receives the original hostname.', 'Besucher erreichen dieses Projekt sicher über die Kundendomain. Deine App erhält den ursprünglichen Hostnamen.'),
     removing: t('The route is disabled. Shelter will retry the Cloudflare cleanup automatically.', 'Die Route ist deaktiviert. Shelter versucht die Cloudflare-Bereinigung automatisch erneut.'),
@@ -349,7 +358,7 @@ export function ExternalCustomerDomains({ projectId, projectName, projectDomains
   const query = useQuery({ queryKey: ['project-domains', projectId], queryFn: () => api.projectDomains(projectId), refetchInterval: 10000 });
   const domains = (query.data ?? projectDomains).map(domain => ({ ...projectDomains.find(item => item.id === domain.id), ...domain }));
   const connected = domains.filter(domain => domain.status === 'active').length;
-  const hostnameValid = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}$/i.test(hostname.trim());
+  const hostnameValid = hostname.trim().length <= 220 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(hostname.trim());
   const add = useMutation({ mutationFn: () => api.addExternalDomain(projectId, hostname.trim().toLowerCase()), onSuccess: async domain => {
     await queryClient.invalidateQueries({ queryKey: ['project-domains', projectId] });
     void queryClient.invalidateQueries({ queryKey: ['project', projectId] });
@@ -361,7 +370,7 @@ export function ExternalCustomerDomains({ projectId, projectName, projectDomains
   const addMenu = <DropdownMenu><DropdownMenuTrigger asChild><Button disabled={disabled}><Plus data-icon="inline-start" />{t('Add domain', 'Domain hinzufügen')}<ChevronDown data-icon="inline-end" /></Button></DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="min-w-64"><DropdownMenuGroup>
       <DropdownMenuItem onSelect={onAddManaged}><Cloud /><span>{t('From Cloudflare', 'Aus Cloudflare')}<small className="block text-muted-foreground">{t('Use a domain in the connected account', 'Domain aus dem verbundenen Konto')}</small></span></DropdownMenuItem>
-      <DropdownMenuItem onSelect={openExternalForm}><Globe2 /><span>{t('External customer domain', 'Externe Kundendomain')}<small className="block text-muted-foreground">{t('Connect with CNAME and TXT', 'Mit CNAME und TXT verbinden')}</small></span></DropdownMenuItem>
+      <DropdownMenuItem onSelect={openExternalForm}><Globe2 /><span>{t('External customer domain', 'Externe Kundendomain')}<small className="block text-muted-foreground">{t('Use a domain or subdomain', 'Hauptdomain oder Subdomain verbinden')}</small></span></DropdownMenuItem>
     </DropdownMenuGroup></DropdownMenuContent>
   </DropdownMenu>;
   return <section className="flex flex-col gap-5" aria-label={t('Project domains', 'Projekt-Domains')}>
@@ -370,7 +379,7 @@ export function ExternalCustomerDomains({ projectId, projectName, projectDomains
       <div className="shrink-0">{addMenu}</div>
     </div>
     {query.isPending ? <Skeleton className="h-36" /> : query.isError ? <Failure error={query.error} retry={() => { void query.refetch(); }} /> : domains.length === 0 ?
-      <Empty className="min-h-64 rounded-xl border bg-card"><EmptyHeader><EmptyMedia variant="icon"><Globe2 /></EmptyMedia><EmptyTitle>{t('Give this app an address', 'Gib dieser App eine Adresse')}</EmptyTitle><EmptyDescription>{t('Connect a Cloudflare domain or a customer’s subdomain. Shelter handles routing and HTTPS.', 'Verbinde eine Cloudflare-Domain oder eine Kunden-Subdomain. Shelter übernimmt Routing und HTTPS.')}</EmptyDescription></EmptyHeader></Empty> :
+      <Empty className="min-h-64 rounded-xl border bg-card"><EmptyHeader><EmptyMedia variant="icon"><Globe2 /></EmptyMedia><EmptyTitle>{t('Give this app an address', 'Gib dieser App eine Adresse')}</EmptyTitle><EmptyDescription>{t('Connect a Cloudflare domain or a customer domain. Shelter handles routing and HTTPS.', 'Verbinde eine Cloudflare-Domain oder eine Kundendomain. Shelter übernimmt Routing und HTTPS.')}</EmptyDescription></EmptyHeader></Empty> :
       <Card>
         <CardHeader className="border-b"><CardTitle>{t('Connected addresses', 'Verknüpfte Adressen')}</CardTitle><CardDescription>{t('{connected} connected · {pending} awaiting setup', '{connected} verbunden · {pending} Einrichtung offen', { connected, pending: domains.length - connected })}</CardDescription></CardHeader>
         <CardContent>
@@ -378,7 +387,7 @@ export function ExternalCustomerDomains({ projectId, projectName, projectDomains
             {domains.map(domain => <AccordionItem id={`domain-${domain.id}`} value={domain.id} key={domain.id}>
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1"><AccordionTrigger aria-label={t('Details for {hostname}', 'Details für {hostname}', { hostname: domain.hostname })}>
-                  <span className="flex min-w-0 items-start gap-3 pr-2"><Globe2 className="mt-1 size-4 shrink-0 text-muted-foreground" /><span className="min-w-0"><span className="block break-all font-medium">{domain.hostname}</span><span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>{domain.connection === 'external' ? t('Customer domain · CNAME', 'Kundendomain · CNAME') : t('Managed in Cloudflare', 'In Cloudflare verwaltet')}</span><span className="inline-flex items-center gap-1">{domain.status === 'active' ? <CheckCircle2 className="size-3 text-success" /> : <Clock3 className="size-3" />}{connectionLabel(domain, t)}</span></span></span></span>
+                  <span className="flex min-w-0 items-start gap-3 pr-2"><Globe2 className="mt-1 size-4 shrink-0 text-muted-foreground" /><span className="min-w-0"><span className="block break-all font-medium">{domain.hostname}</span><span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>{domain.connection === 'external' ? domain.external?.dnsMode === 'apex' ? t('Customer domain · ALIAS', 'Kundendomain · ALIAS') : t('Customer domain · CNAME', 'Kundendomain · CNAME') : t('Managed in Cloudflare', 'In Cloudflare verwaltet')}</span><span className="inline-flex items-center gap-1">{domain.status === 'active' ? <CheckCircle2 className="size-3 text-success" /> : <Clock3 className="size-3" />}{connectionLabel(domain, t)}</span></span></span></span>
                 </AccordionTrigger></div>
                 <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={t('Actions for {hostname}', 'Aktionen für {hostname}', { hostname: domain.hostname })} disabled={disabled}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="min-w-44"><DropdownMenuGroup>
                   {domain.status === 'active' && <DropdownMenuItem asChild><a href={`https://${domain.hostname}`} target="_blank" rel="noreferrer"><ExternalLink />{t('Open website', 'Website öffnen')}</a></DropdownMenuItem>}
@@ -398,13 +407,13 @@ export function ExternalCustomerDomains({ projectId, projectName, projectDomains
     <p className="text-xs leading-relaxed text-muted-foreground">{t('Use several customer domains with one shared app, or attach each domain to a dedicated customer project. The app remains responsible for customer data and branding.', 'Nutze mehrere Kundendomains mit einer gemeinsamen App oder verbinde jede Domain mit einem eigenen Kundenprojekt. Kundendaten und Branding bleiben Aufgabe der App.')}</p>
     <Dialog open={addOpen} onOpenChange={open => { if (!add.isPending) setAddOpen(open); }}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader><DialogTitle>{t('Connect a customer domain', 'Kundendomain verbinden')}</DialogTitle><DialogDescription>{t('Connect this domain to “{project}”. The customer keeps their DNS provider and receives CNAME and TXT instructions.', 'Verbinde diese Domain mit „{project}“. Der Kunde behält seinen DNS-Anbieter und erhält eine CNAME- und TXT-Anleitung.', { project: projectName })}</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t('Connect a customer domain', 'Kundendomain verbinden')}</DialogTitle><DialogDescription>{t('Connect this domain to “{project}”. The customer receives DNS instructions for their existing provider.', 'Verbinde diese Domain mit „{project}“. Der Kunde erhält DNS-Anweisungen für seinen bestehenden Anbieter.', { project: projectName })}</DialogDescription></DialogHeader>
         {settings.isPending ? <Skeleton className="h-24" /> : settings.isError ? <Failure error={settings.error} retry={() => { void settings.refetch(); }} /> : !settings.data.configured ? <Alert><Info /><AlertTitle>{t('One-time setup required', 'Einmalige Grundeinrichtung erforderlich')}</AlertTitle><AlertDescription>{t('External customer domains need a one-time Cloudflare for SaaS setup. After that, continue here in this project.', 'Für externe Kundendomains muss Cloudflare for SaaS einmalig eingerichtet werden. Danach geht es hier im Projekt weiter.')}</AlertDescription></Alert> :
           <form id="add-external-domain" onSubmit={event => { event.preventDefault(); if (hostnameValid) add.mutate(); }}><FieldGroup><Field data-invalid={hostname.length > 0 && !hostnameValid}>
-            <FieldLabel htmlFor="external-hostname">{t('Customer subdomain', 'Kunden-Subdomain')}</FieldLabel><Input id="external-hostname" value={hostname} onChange={event => { setHostname(event.target.value); if (add.isError) add.reset(); }} placeholder="portal.customer.com" required autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={add.isPending} aria-invalid={hostname.length > 0 && !hostnameValid} />
-            <FieldDescription>{t('For example portal.customer.com. Enter the hostname without https:// or a path.', 'Zum Beispiel portal.kunde.de. Trage den Hostnamen ohne https:// oder Pfad ein.')}</FieldDescription>
-            {hostname.length > 0 && !hostnameValid && <FieldError>{t('Enter a complete subdomain such as portal.customer.com.', 'Gib eine vollständige Subdomain wie portal.kunde.de ein.')}</FieldError>}
-          </Field><div className="rounded-lg bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{t('Customer CNAME destination', 'CNAME-Ziel für den Kunden')}: <code className="break-all text-foreground">{settings.data.cnameTarget}</code></div></FieldGroup></form>}
+            <FieldLabel htmlFor="external-hostname">{t('Customer domain', 'Kundendomain')}</FieldLabel><Input id="external-hostname" value={hostname} onChange={event => { setHostname(event.target.value); if (add.isError) add.reset(); }} placeholder="portal.customer.com" required autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={add.isPending} aria-invalid={hostname.length > 0 && !hostnameValid} />
+            <FieldDescription>{t('Enter a domain such as customer.com or portal.customer.com. A root domain requires ALIAS, ANAME or CNAME flattening at its DNS provider.', 'Gib eine Domain wie kunde.de oder portal.kunde.de ein. Für die Hauptdomain muss der DNS-Anbieter ALIAS, ANAME oder CNAME-Flattening unterstützen.')}</FieldDescription>
+            {hostname.length > 0 && !hostnameValid && <FieldError>{t('Enter a complete domain without https:// or a path.', 'Gib eine vollständige Domain ohne https:// oder Pfad ein.')}</FieldError>}
+          </Field><div className="rounded-lg bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{t('DNS destination', 'DNS-Ziel für den Kunden')}: <code className="break-all text-foreground">{settings.data.cnameTarget}</code></div></FieldGroup></form>}
         {add.isError && <Failure error={add.error} />}
         <DialogFooter><Button variant="ghost" disabled={add.isPending} onClick={() => setAddOpen(false)}>{t('Cancel', 'Abbrechen')}</Button>{settings.isSuccess && !settings.data.configured ? <Button asChild><Link to={`/settings/cloudflare?project=${encodeURIComponent(projectId)}#external-domains`}>{t('Set up Cloudflare for SaaS', 'Cloudflare for SaaS einrichten')}<ArrowRight data-icon="inline-end" /></Link></Button> : <Button type="submit" form="add-external-domain" disabled={add.isPending || !hostnameValid || !settings.data?.configured}>{add.isPending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <ArrowRight data-icon="inline-end" />}{add.isPending ? t('Adding domain…', 'Domain wird hinzugefügt …') : t('Continue to DNS setup', 'Weiter zur DNS-Einrichtung')}</Button>}</DialogFooter>
       </DialogContent>

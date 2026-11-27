@@ -378,11 +378,13 @@ are retained locally; a host administrator can alter this SQLite data, so this i
 an operational audit trail rather than an external tamper-proof compliance log.
 ## External customer domains
 
-External CNAME bindings require a random, binding-specific DNS TXT proof before
+External domain bindings require a random, binding-specific DNS TXT proof before
 Shelter creates a Cloudflare for SaaS custom hostname. CNAME, hostname activation,
 certificate activation and an active deployment are required before routing.
-DNS checks never fetch customer-controlled URLs. Public-suffix validation rejects
-apex names and IPs. A stale CNAME alone cannot verify a new binding.
+DNS checks never fetch customer-controlled URLs. Subdomains require the exact
+configured CNAME. A registrable root domain must resolve only to addresses
+returned for the configured Shelter target. Shared edge addresses are not
+proof of ownership. Public suffixes and IP inputs are rejected.
 
 The configured fallback must be active and point through a proxied CNAME to this
 installation's exact tunnel. Its hostname can be the configured primary panel

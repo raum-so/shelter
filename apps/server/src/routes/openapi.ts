@@ -174,7 +174,7 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
           parameters: [{ $ref: "#/components/parameters/ProjectId" }],
           get: { tags: ["Domains"], summary: "List project domains with DNS instructions and verification status", security: bearerSecurity, responses: { "200": { description: "Domain list", content: { "application/json": { schema: { type: "object", properties: { domains: { type: "array", items: { $ref: "#/components/schemas/ProjectDomain" } } } } } } }, "401": errorResponse, "403": errorResponse, "404": errorResponse } },
           post: { tags: ["Domains"], summary: "Connect a managed or external customer hostname", security: bearerSecurity,
-            description: "Requires domains:write. External connections are idempotent per project and hostname; returns DNS records to set at the customer provider. Domain-only tokens are restricted to their selected project.",
+            description: "Requires domains:write. External connections return CNAME instructions for subdomains or ALIAS/flattening instructions for registrable apex domains, plus TXT verification. Creation is idempotent per project and hostname. Domain-only tokens are restricted to their selected project.",
             requestBody: { required: true, content: { "application/json": { schema: { type: "object", additionalProperties: false, required: ["hostname"], properties: { hostname: { type: "string", maxLength: 253 }, connection: { type: "string", enum: ["cloudflare", "external"], default: "cloudflare" }, zoneId: { type: "string", description: "Managed Cloudflare connections only" } } } } } },
             responses: { "201": { description: "Managed domain connected" }, "202": { description: "External connection pending", content: { "application/json": { schema: { type: "object", properties: { domain: { $ref: "#/components/schemas/ProjectDomain" } } } } } }, "400": errorResponse, "401": errorResponse, "403": errorResponse, "409": errorResponse, "502": errorResponse } }
         },
@@ -285,9 +285,9 @@ export function registerOpenApiRoutes(app: FastifyInstance, database: Database):
               status: { type: "string", enum: ["pending", "active", "error"] }, error: { type: ["string", "null"] },
               external: { type: "object", properties: {
                 phase: { type: "string", enum: ["ownership", "dns", "certificate", "deployment", "active", "removing", "error"] },
-                cnameTarget: { type: "string" }, ownershipVerified: { type: "boolean" }, dnsReady: { type: "boolean" },
+                cnameTarget: { type: "string" }, dnsMode: { type: "string", enum: ["cname", "apex"] }, ownershipVerified: { type: "boolean" }, dnsReady: { type: "boolean" },
                 hostnameStatus: { type: "string" }, tlsStatus: { type: "string" }, lastCheckedAt: { type: ["string", "null"] }, error: { type: ["string", "null"] },
-                records: { type: "array", items: { type: "object", required: ["type", "name", "value"], properties: { type: { type: "string", enum: ["CNAME", "TXT"] }, name: { type: "string" }, value: { type: "string" } } } }
+                records: { type: "array", items: { type: "object", required: ["type", "name", "value"], properties: { type: { type: "string", enum: ["CNAME", "ALIAS", "TXT"], description: "ALIAS denotes a provider-side ALIAS, ANAME, or flattened CNAME at the zone apex." }, name: { type: "string" }, value: { type: "string" } } } }
               } }
             }
           },

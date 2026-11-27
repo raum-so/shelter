@@ -6,7 +6,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api, ApiError } from '@/api/client';
 import { I18nProvider } from '@/i18n';
-import { ExternalDomainSettingsCard } from './ExternalDomains';
+import type { Domain } from '@/types';
+import { ExternalCustomerDomains, ExternalDomainSettingsCard } from './ExternalDomains';
 
 const clients: QueryClient[] = [];
 const input = { zoneId: 'a'.repeat(32), cnameTarget: 'hosting.example.com' };
@@ -65,4 +66,34 @@ it.each(['inspection', 'apply'])('explains missing rights during %s and offers t
   await waitFor(() => expect(reconnect).toHaveBeenCalledWith(true));
   if (phase === 'inspection') expect(save).not.toHaveBeenCalled();
   else expect(screen.getByRole('status').textContent).toContain('Some exceptions may already be saved');
+});
+
+it('accepts a root hostname in the project form and shows the provider-neutral ALIAS instructions', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  clients.push(client);
+  client.setQueryData(['external-domain-settings'], { ...settings, ...input, configured: true });
+  client.setQueryData(['project-domains', 'app'], []);
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.spyOn(document, 'getElementById').mockImplementation(() => null);
+  const domain: Domain = {
+    id: 'dom_apex', hostname: 'customer.de', connection: 'external', status: 'pending',
+    external: {
+      dnsMode: 'apex', phase: 'ownership', cnameTarget: input.cnameTarget, ownershipVerified: false, dnsReady: false,
+      hostnameStatus: 'pending', tlsStatus: 'pending', lastCheckedAt: null, error: null,
+      records: [{ type: 'ALIAS', name: 'customer.de', value: input.cnameTarget }]
+    }
+  };
+  vi.spyOn(api, 'projectDomains').mockResolvedValue([domain]);
+  const add = vi.spyOn(api, 'addExternalDomain').mockResolvedValue(domain);
+  render(<QueryClientProvider client={client}><I18nProvider>
+    <MemoryRouter initialEntries={['/projects/app?connectDomain=external']}>
+      <ExternalCustomerDomains projectId="app" projectName="App" projectDomains={[]}
+        onRemove={() => {}} onAddManaged={() => {}} onEditManaged={() => {}} />
+    </MemoryRouter>
+  </I18nProvider></QueryClientProvider>);
+  const user = userEvent.setup();
+  await user.type(await screen.findByRole('textbox', { name: 'Customer domain' }), domain.hostname);
+  await user.click(screen.getByRole('button', { name: 'Continue to DNS setup' }));
+  expect(await screen.findByText(/Set an ALIAS, ANAME or flattened CNAME at the zone root/)).toBeTruthy();
+  expect(add).toHaveBeenCalledWith('app', domain.hostname);
 });
