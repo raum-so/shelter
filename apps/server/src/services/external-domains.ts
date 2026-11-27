@@ -10,11 +10,12 @@ import type { CloudflareService } from "./cloudflare.js";
 import { panelHostnames } from "./panel-domains.js";
 import { reconcileRouting } from "./routing.js";
 
-interface DnsRecord { type: "CNAME" | "TXT"; name: string; value: string }
+interface DnsRecord { type: "CNAME" | "ALIAS" | "TXT"; name: string; value: string }
 interface ExternalRow {
   domain_id: string;
   zone_id: string;
   cname_target: string;
+  dns_mode: "cname" | "apex";
   verification_token: string;
   provider_id: string | null;
   phase: "ownership" | "dns" | "certificate" | "deployment" | "active" | "removing" | "error";
@@ -70,11 +71,11 @@ export class ExternalDomains {
       id: domain.id, hostname: domain.hostname, status: domain.status, error: domain.error,
       connection: row ? "external" : "cloudflare",
       ...(row ? { external: {
-        phase: row.phase, cnameTarget: row.cname_target, ownershipVerified: Boolean(row.verified_at),
+        phase: row.phase, cnameTarget: row.cname_target, dnsMode: row.dns_mode, ownershipVerified: Boolean(row.verified_at),
         dnsReady: row.dns_ready === 1, hostnameStatus: row.hostname_status, tlsStatus: row.tls_status,
         lastCheckedAt: row.checked_at, error: row.last_error,
         records: [
-          { type: "CNAME", name: domain.hostname, value: row.cname_target },
+          { type: row.dns_mode === "apex" ? "ALIAS" : "CNAME", name: domain.hostname, value: row.cname_target },
           { type: "TXT", name: verificationName(domain.hostname), value: row.verification_token },
           ...JSON.parse(row.validation_records_json) as DnsRecord[]
         ]
@@ -85,8 +86,8 @@ export class ExternalDomains {
   create(projectId: string, input: string) {
     const hostname = normalizeHostname(input);
     const parsed = parse(hostname, { allowPrivateDomains: true });
-    if (hostname.length > 220 || input.trim() !== hostname || !parsed.subdomain || parsed.isIp) {
-      throw badRequest("Use a lowercase subdomain without a scheme, path, or wildcard", "EXTERNAL_HOSTNAME_INVALID");
+    if (hostname.length > 220 || input.trim() !== hostname || !parsed.domain || parsed.isIp) {
+      throw badRequest("Use a lowercase domain or subdomain without a scheme, path, or wildcard", "EXTERNAL_HOSTNAME_INVALID");
     }
     const settings = this.cloudflare.externalDomainSettings();
     if (!settings.configured || !settings.zoneId || !settings.cnameTarget) {
@@ -111,11 +112,28 @@ export class ExternalDomains {
         throw conflict("The external domain limit has been reached", "EXTERNAL_DOMAIN_LIMIT");
       }
       this.database.createDomain(domain);
-      this.database.sqlite.prepare(`INSERT INTO external_domains (domain_id, zone_id, cname_target, verification_token)
-        VALUES (?, ?, ?, ?)`).run(domain.id, settings.zoneId, settings.cnameTarget, randomBytes(32).toString("hex"));
+      this.database.sqlite.prepare(`INSERT INTO external_domains (domain_id, zone_id, cname_target, dns_mode, verification_token)
+        VALUES (?, ?, ?, ?, ?)`).run(domain.id, settings.zoneId, settings.cnameTarget, parsed.subdomain ? "cname" : "apex", randomBytes(32).toString("hex"));
       return domain;
     }).immediate();
     return this.present(selected);
+  }
+
+  private async apexPointsToTarget(hostname: string, target: string): Promise<boolean> {
+    const [host4, host6, target4, target6] = await Promise.all([
+      dnsLookup(() => this.dns.resolve4(hostname)),
+      dnsLookup(() => this.dns.resolve6(hostname)),
+      dnsLookup(() => this.dns.resolve4(target)),
+      dnsLookup(() => this.dns.resolve6(target))
+    ]);
+    if (!target4?.length && !target6?.length) {
+      throw badRequest("The Shelter destination has no public addresses; try again later", "EXTERNAL_DNS_UNAVAILABLE");
+    }
+    // Shared edge IPs are only a routing signal. The TXT proof and exact
+    // Cloudflare hostname and certificate still gate activation.
+    return Boolean(host4?.length || host6?.length)
+      && (host4 ?? []).every(address => target4?.includes(address))
+      && (host6 ?? []).every(address => target6?.includes(address));
   }
 
   private async lease<T>(id: string, action: (row: ExternalRow) => Promise<T>): Promise<T> {
@@ -146,8 +164,10 @@ export class ExternalDomains {
           row.verified_at = row.checked_at;
           this.save(row);
         }
-        const names = await dnsLookup(() => this.dns.resolveCname(domain.hostname));
-        row.dns_ready = names?.some(name => canonical(name) === row.cname_target) ? 1 : 0;
+        const dnsReady = row.dns_mode === "apex"
+          ? await this.apexPointsToTarget(domain.hostname, row.cname_target)
+          : (await dnsLookup(() => this.dns.resolveCname(domain.hostname)))?.some(name => canonical(name) === row.cname_target);
+        row.dns_ready = dnsReady ? 1 : 0;
         if (!row.dns_ready) {
           row.phase = "dns";
           this.database.updateDomain(id, { zone_id: null, dns_record_id: null, status: "pending", error: null });
@@ -168,9 +188,15 @@ export class ExternalDomains {
         if (!provider) throw conflict("The Cloudflare custom hostname is missing; remove and reconnect this domain", "CUSTOM_HOSTNAME_MISSING");
         row.hostname_status = provider.status;
         row.tls_status = provider.ssl.status;
-        row.validation_records_json = JSON.stringify((provider.ssl.validation_records ?? [])
+        const validationRecords: DnsRecord[] = (provider.ssl.validation_records ?? [])
           .filter(record => record.txt_name && record.txt_value)
-          .map(record => ({ type: "TXT", name: record.txt_name!, value: record.txt_value! })));
+          .map(record => ({ type: "TXT", name: record.txt_name!, value: record.txt_value! }));
+        const ownership = provider.ownership_verification;
+        if (row.dns_mode === "apex" && provider.status !== "active"
+          && ownership?.type === "txt" && ownership.name && ownership.value) {
+          validationRecords.push({ type: "TXT", name: ownership.name, value: ownership.value });
+        }
+        row.validation_records_json = JSON.stringify(validationRecords);
         const project = this.database.getMutableProject(domain.project_id);
         const deployment = project?.active_deployment_id ? this.database.getDeployment(project.active_deployment_id) : undefined;
         row.phase = provider.status !== "active" || provider.ssl.status !== "active" ? "certificate"

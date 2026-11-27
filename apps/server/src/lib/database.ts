@@ -321,6 +321,7 @@ CREATE TABLE IF NOT EXISTS external_domains (
   domain_id TEXT PRIMARY KEY REFERENCES domains(id) ON DELETE CASCADE,
   zone_id TEXT NOT NULL,
   cname_target TEXT NOT NULL,
+  dns_mode TEXT NOT NULL DEFAULT 'cname' CHECK(dns_mode IN ('cname', 'apex')),
   verification_token TEXT NOT NULL,
   provider_id TEXT,
   phase TEXT NOT NULL DEFAULT 'ownership' CHECK(phase IN ('ownership','dns','certificate','deployment','active','removing','error')),
@@ -638,6 +639,12 @@ export class Database {
       this.sqlite.exec("DROP TABLE api_tokens");
     }
     this.sqlite.exec(schema);
+    this.sqlite.transaction(() => {
+      const columns = this.sqlite.pragma("table_info(external_domains)") as Array<{ name: string }>;
+      if (!columns.some(column => column.name === "dns_mode")) {
+        this.sqlite.exec("ALTER TABLE external_domains ADD COLUMN dns_mode TEXT NOT NULL DEFAULT 'cname' CHECK(dns_mode IN ('cname', 'apex'))");
+      }
+    }).immediate();
     const supabaseBackupColumns = this.sqlite.pragma("table_info(supabase_backups)") as Array<{name:string}>;
     if (!supabaseBackupColumns.some(column => column.name === "settings_json")) this.sqlite.exec("ALTER TABLE supabase_backups ADD COLUMN settings_json TEXT");
     if (!(this.sqlite.pragma("table_info(api_tokens)") as Array<{ name: string }>).some(column => column.name === "project_id")) {

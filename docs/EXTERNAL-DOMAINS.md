@@ -1,7 +1,8 @@
 # External customer domains
 
-Shelter can connect customer subdomains through a CNAME without taking over the
-customer's DNS zone. Cloudflare for SaaS terminates HTTPS; the existing outbound
+Shelter can connect customer subdomains through a CNAME and root domains through
+an ALIAS or flattened CNAME without taking over the customer's DNS zone.
+Cloudflare for SaaS terminates HTTPS; the existing outbound
 Cloudflare Tunnel and Traefik file provider route requests to the project.
 No additional public VPS ports or Docker socket mounts are needed.
 
@@ -122,24 +123,34 @@ and [current plans](https://developers.cloudflare.com/cloudflare-for-platforms/c
 
 ## Connect a customer
 
-Open a project's **Domains → Add domain → External customer domain** and enter a subdomain,
-for example `portal.customer.com`. Shelter returns:
+Open **Project → Domains → Add domain → External customer domain** and enter
+`portal.customer.com` for a subdomain or `customer.com` for a root domain.
+Shelter shows the routing record and a random TXT proof at
+`_shelter-verification.<hostname>`. Set these at the customer's authoritative
+DNS provider.
 
-- a CNAME from that hostname to the configured connection target (normally the
-  Shelter primary domain);
-- a random TXT proof at `_shelter-verification.portal.customer.com`.
+- For a **subdomain**, create a DNS-only CNAME to the displayed Shelter destination.
+  Public DNS must return the CNAME itself. Turn off proxying and flattening for
+  that record.
+- For a **root domain**, create an ALIAS, ANAME, or flattened CNAME at `@` pointing to
+  the same destination hostname. Select DNS only when offered. The DNS provider
+  must support one of these record types at the zone root. Keep the hostname as
+  the destination so the provider can follow IP changes. [How Cloudflare
+  flattens CNAMEs](https://developers.cloudflare.com/dns/cname-flattening/)
 
-Set both at the customer's existing authoritative DNS provider. The customer's
-CNAME must be **DNS-only**: proxied or flattened customer records hide the CNAME
-and are not supported by this verification flow. Some DNS panels automatically
-append the zone name; use the relative record name in those panels.
+Some DNS panels append the zone name automatically. Use the relative name for
+the TXT record in those panels. Keep the TXT proof until ownership is confirmed,
+and keep the routing record in place. For a root domain, Shelter requires every
+advertised A and AAAA answer to match an address currently returned for the
+configured Shelter destination. Shared Cloudflare edge IPs are only a routing
+signal. The TXT proof establishes ownership, and the exact Cloudflare hostname
+and certificate must both become active before Shelter enables the route.
+Resolver caches or region-specific DNS answers can delay a match.
 
-Keep the TXT proof until ownership has been confirmed. The CNAME must remain in
-place. Shelter registers the exact custom hostname only after both records
-match, then requests a domain-validated certificate using HTTP validation at
-Cloudflare. If Cloudflare returns additional DNS validation instructions, they
-appear alongside the other records. CAA restrictions and provider certificate
-issuance can delay activation.
+After TXT and routing checks pass, Shelter registers the exact custom hostname
+and requests a domain-validated certificate using HTTP validation. If Cloudflare
+supplies additional TXT records for ownership or HTTPS, follow the instructions
+in the domain row. CAA restrictions and certificate issuance can delay activation.
 
 The domain list combines managed and customer domains. Expand a row for its DNS
 instructions, connection progress and access settings. Ownership, CNAME,
@@ -154,11 +165,12 @@ Traffic is enabled only when the exact Cloudflare hostname and its certificate
 are active and the project has an active deployment with an internal port.
 External routes redirect HTTP to HTTPS. The original Host header is preserved.
 
-This first version supports explicit ASCII subdomains, including subdomains
-under multi-part public suffixes. Apex domains, IP addresses, wildcard domains,
-IDN input, customer-side proxying, and preview subdomain generation beneath an
-external domain are not supported. Existing managed Cloudflare domains retain
-their current behavior, including managed apex support. There is a limit of
+Shelter detects registrable root domains using the public suffix list, which
+also covers names such as `customer.co.uk`. Delegated subzones below a
+registrable root follow the subdomain flow. IP addresses, wildcard domains,
+IDN input, customer-side proxying, static-IP Apex Proxying and preview subdomain
+generation beneath an external domain are outside this flow. Existing managed
+Cloudflare domains retain their managed apex support. There is a limit of
 1,000 external bindings per installation, independent of Cloudflare plan limits.
 
 ## Shared application or dedicated installation
@@ -197,8 +209,11 @@ Content-Type: application/json
 {"hostname":"portal.customer.com","connection":"external"}
 ```
 
-The response is HTTP 202 with `domain.id`, `domain.status`, and
-`domain.external.records` (`type`, `name`, `value`). Repeating this request for
+Use the same request with `"hostname":"customer.com"` for a root domain.
+The response is HTTP 202 with `domain.id`, `domain.status`,
+`domain.external.dnsMode` (`cname` or `apex`) and
+`domain.external.records` (`type`, `name`, `value`). `ALIAS` represents
+the provider's ALIAS, ANAME or flattened CNAME instruction. Repeating this request for
 the same external hostname and project returns the existing binding and proof.
 A hostname cannot belong to another project simultaneously.
 
@@ -245,7 +260,7 @@ Persistent state and operation leases survive API restarts. Pending connections
 are revisited about once per minute; active bindings about every five minutes.
 Checks are serialized and bounded, so large queues can take longer.
 
-A confirmed CNAME mismatch disables routing. A temporary DNS or provider outage
+A confirmed CNAME or apex address mismatch disables routing. A temporary DNS or provider outage
 is recorded without deleting an established route. Removing a domain immediately
 quarantines its route; failed provider cleanup stays visible and retries in the
 background. Project deletion also removes its external custom hostnames. Customer
@@ -258,8 +273,11 @@ response to a successful hostname creation, an orphan may need manual review in
 Cloudflare. Verify the exact hostname, zone and origin before removing that
 resource, then retry. Drifted custom origins are left untouched and reported.
 
-Storage changes are additive: a separate external-domain table and an optional
-project restriction on API tokens. Back up the database before upgrading. Before
+Storage changes are additive. Existing external-domain bindings receive
+`dns_mode = 'cname'` and keep their DNS instructions. Back up the database
+before upgrading. Before rolling back to a build with subdomain-only external
+support, remove apex bindings on the newer build so their provider resources
+can be cleaned up. Before
 rolling back to a version without external-domain support, remove these bindings
 and revoke project-domain tokens on the newer version; older versions do not
 understand their verification, cleanup or token restrictions. Existing projects,

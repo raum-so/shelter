@@ -5,8 +5,9 @@ Read the repository's `AGENTS.md` first. Do not infer publication or production
 acceptance from a working source installation.
 
 The user-facing changes and upgrade instructions are in the
-[0.8.0 release notes](releases/0.8.0.md) and
-[0.8.1 release notes](releases/0.8.1.md).
+[0.8.0 release notes](releases/0.8.0.md),
+[0.8.1 release notes](releases/0.8.1.md), and
+[0.8.2 release notes](releases/0.8.2.md).
 
 ## Release scope
 
@@ -73,13 +74,17 @@ The following contracts apply to both the published base and this extension.
 - Customers use the configured Shelter primary hostname as their normal CNAME
   destination. The internal `cfargotunnel.com` target is not the customer-facing
   destination. A previously saved dedicated fallback remains supported.
-- A customer keeps its authoritative DNS provider. An exact DNS-only CNAME and
-  the binding-specific TXT proof are required before provider registration.
+- A customer keeps its authoritative DNS provider. Subdomains require an exact
+  DNS-only CNAME. The apex extension accepts an ALIAS, ANAME or flattened CNAME
+  at the registrable root. Shelter checks its public A and AAAA answers against
+  the configured destination. In both modes the binding-specific TXT proof is
+  required before provider registration. Shared Cloudflare edge addresses
+  establish neither ownership nor an active custom hostname.
 - A shared application maps approved hosts to its own tenants. A dedicated
   installation uses one project per customer. Shelter handles domains and
   routing; the application remains responsible for tenancy, branding, sessions,
   authorization, canonical URLs, and authentication callbacks.
-- Routing needs verified ownership, a matching CNAME, an active custom hostname
+- Routing needs verified ownership, matching DNS, an active custom hostname
   and certificate, and a deployable project. Never report a verify request's
   HTTP 200 as proof that a domain is active.
 - Preserve ownership checks, provider IDs, quarantine on removal, and the
@@ -108,10 +113,27 @@ Customer-domain DNS checks deliberately use public recursive resolvers. A pilot
 failure showed a correct public TXT proof hidden by the host resolver's negative
 cache. `EXTERNAL_DOMAIN_DNS_SERVERS` selects up to four resolver IPs; the default
 is Cloudflare and Google public DNS. Do not replace this with an unbounded lookup
-or weaken the exact TXT/CNAME match. A manual check that overlaps the background
+or weaken the exact TXT and subdomain CNAME checks. The apex mode is stored per
+binding. Existing rows default to `cname` through an additive migration. An apex
+registration may expose a second TXT record from Cloudflare for hostname
+validation. A manual check that overlaps the background
 checker is reported as in progress, rather than as a failed verification.
 
 ## Evidence and remaining acceptance
+
+The apex extension was tested on 2026-11-26 with the existing Cloudflare SaaS
+fallback and tunnel. A disposable apex with a DNS-only flattened CNAME
+returned the fallback's IPv4 and IPv6 addresses. A second hostname in that
+zone used a regular DNS-only CNAME. The candidate performed the TXT and DNS
+checks, created the exact custom hostnames and exposed the additional
+Cloudflare TXT proof for apex ownership. Both provider hostnames and
+certificates reached active. A temporary app reached through the existing
+Tunnel and Traefik responded with HTTP 200 and received each original Host
+header, with normal certificate verification enabled. The test DNS records
+and custom hostnames were removed. The candidate ran against an isolated
+database and a temporary router, with no production version update. ALIAS and
+ANAME were covered at the address-verification boundary. The live DNS test
+used Cloudflare's CNAME flattening.
 
 The source pilot was checked on 2026-11-10:
 

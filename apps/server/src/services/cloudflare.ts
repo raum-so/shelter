@@ -119,6 +119,11 @@ const customHostnameSchema = z.object({
   id: z.string().regex(/^[a-zA-Z0-9-]{1,128}$/),
   hostname: z.string().max(253),
   status: z.string().max(80),
+  ownership_verification: z.object({
+    type: z.string().optional(),
+    name: z.string().max(253).optional(),
+    value: z.string().max(1024).optional()
+  }).nullish(),
   ssl: z.object({
     status: z.string().max(80),
     validation_records: z.array(z.object({
