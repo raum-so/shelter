@@ -48,9 +48,14 @@ async function fixture(environment: NodeJS.ProcessEnv = {}) {
   };
   const dnsTxt = new Map<string, string>();
   const dnsCname = new Map<string, string>();
+  const dns4 = new Map<string, string[]>();
+  const dns6 = new Map<string, string[]>();
   vi.spyOn(Resolver.prototype, "resolveTxt").mockImplementation(async name => dnsTxt.has(name) ? [[dnsTxt.get(name)!]] : []);
   vi.spyOn(Resolver.prototype, "resolveCname").mockImplementation(async name => dnsCname.has(name) ? [dnsCname.get(name)!] : []);
-  const hostnames = new Map<string, { id: string; hostname: string; status: string; ssl: { status: string }; custom_origin_server?: string }>();
+  vi.spyOn(Resolver.prototype, "resolve4").mockImplementation(async name => dns4.get(name) ?? []);
+  vi.spyOn(Resolver.prototype, "resolve6").mockImplementation(async name => dns6.get(name) ?? []);
+  const hostnames = new Map<string, { id: string; hostname: string; status: string; ssl: { status: string }; custom_origin_server?: string;
+    ownership_verification?: { type: string; name: string; value: string } }>();
   let tls = "pending_validation";
   let failDelete = false;
   const calls: Array<{ method: string; path: string }> = [];
@@ -85,10 +90,10 @@ async function fixture(environment: NodeJS.ProcessEnv = {}) {
   const prove = (domain: ReturnType<ExternalDomains["create"]>) => {
     for (const record of domain.external!.records) {
       if (record.type === "TXT") dnsTxt.set(record.name, record.value);
-      else dnsCname.set(record.name, record.value);
+      else if (record.type === "CNAME") dnsCname.set(record.name, record.value);
     }
   };
-  return { config, database, app, headers, cloudflare, service, makeProject, prove, dnsTxt, dnsCname, provider, calls, hostnames,
+  return { config, database, app, headers, cloudflare, service, makeProject, prove, dnsTxt, dnsCname, dns4, dns6, provider, calls, hostnames,
     ready: () => { tls = "active"; }, failDeletion: (value: boolean) => { failDelete = value; } };
 }
 
@@ -285,16 +290,20 @@ describe("external customer domain lifecycle", () => {
     expect(routing).toContain("service: shared"); expect(routing).toContain("service: dedicated");
   });
 
-  it("resumes pending verification after reopening the database without recreating the certificate", async () => {
+  it("resumes a pre-upgrade CNAME binding without recreating the certificate", async () => {
     const f = await fixture(); f.makeProject("app", false);
     const domain = f.service.create("app", "pending.customer.example"); f.prove(domain);
     await f.service.verify(domain.id);
+    // Emulate a database last opened by the subdomain-only version.
+    f.database.sqlite.exec("ALTER TABLE external_domains DROP COLUMN dns_mode");
     const reopened = new Database(f.config);
     const resumed = new ExternalDomains(f.config, reopened, new CloudflareService(f.config, reopened));
     reopened.recoverPendingDomains();
     expect(reopened.getDomain(domain.id)?.status).toBe("pending");
     f.ready();
-    expect((await resumed.verify(domain.id)).external?.phase).toBe("deployment");
+    expect((await resumed.verify(domain.id)).external).toMatchObject({
+      phase: "deployment", dnsMode: "cname", records: expect.arrayContaining([{ type: "CNAME", name: domain.hostname, value: target }])
+    });
     expect(f.calls.filter(c => c.method === "POST")).toHaveLength(1);
     reopened.close();
   });
@@ -349,11 +358,53 @@ describe("external customer domain lifecycle", () => {
     expect(wrong.statusCode).toBe(404);
     expect((await f.app.inject({ method: "DELETE", url: `${url}/${domain.id}`, headers: f.headers })).statusCode).toBe(200);
   });
-  it.each(["customer.co.uk", "customer.example", "*.customer.example", "https://portal.customer.example/path", "127.0.0.1"])("rejects unsupported hostnames: %s", async hostname => {
+  it.each(["co.uk", "com", "*.customer.example", "https://portal.customer.example/path", "127.0.0.1"])("rejects unsupported hostnames: %s", async hostname => {
     const f = await fixture(); f.makeProject("app");
     expect(() => f.service.create("app", hostname)).toThrow();
     expect(f.database.listDomains("app")).toHaveLength(0);
     expect(f.calls).toHaveLength(0);
+  });
+
+  it("activates a flattened customer apex only after TXT proof, matching addresses and a valid certificate", async () => {
+    const f = await fixture();
+    f.makeProject("apex");
+    const hostname = "customer.co.uk";
+    const url = "/api/projects/apex/domains";
+    const created = await f.app.inject({ method: "POST", url, headers: f.headers, payload: { hostname, connection: "external" } });
+    expect(created.statusCode).toBe(202);
+    const domain = created.json().domain;
+    expect(domain.external).toMatchObject({ dnsMode: "apex", records: [
+      { type: "ALIAS", name: hostname, value: target },
+      { type: "TXT", name: "_shelter-verification.customer.co.uk", value: expect.any(String) }
+    ] });
+    const recheck = async () => (await f.app.inject({ method: "POST", url: `${url}/${domain.id}/verify`, headers: f.headers })).json().domain;
+    f.dns4.set(target, ["192.0.2.1", "192.0.2.2"]);
+    f.dns4.set(hostname, ["192.0.2.2", "192.0.2.1"]);
+    f.dns6.set(target, ["2001:db8::1"]);
+    f.dns6.set(hostname, ["2001:db8::2"]);
+    expect((await recheck()).external.phase).toBe("ownership");
+    f.prove(domain);
+    expect((await recheck()).external).toMatchObject({ phase: "dns", dnsReady: false });
+    expect(f.hostnames.size).toBe(0);
+    f.dns6.set(hostname, ["2001:db8::1"]);
+    expect(await recheck()).toMatchObject({ status: "pending", external: { phase: "certificate", dnsReady: true } });
+    const customHostname = [...f.hostnames.values()][0]!;
+    const challenge = { type: "txt", name: "_cf-custom-hostname.customer.co.uk", value: "mock-provider-proof" };
+    customHostname.ownership_verification = challenge;
+    customHostname.status = "pending";
+    f.ready();
+    const awaitingHostname = await recheck();
+    expect(awaitingHostname.status).toBe("pending");
+    expect(awaitingHostname.external.records).toContainEqual({ ...challenge, type: "TXT" });
+    expect(fs.readFileSync(f.config.traefikConfigPath, "utf8")).not.toContain(hostname);
+    customHostname.status = "active";
+    expect(await recheck()).toMatchObject({ status: "active", external: { phase: "active", tlsStatus: "active" } });
+    expect(fs.readFileSync(f.config.traefikConfigPath, "utf8")).toContain(hostname);
+    f.dns4.delete(hostname);
+    expect((await recheck()).status).toBe("active"); // A matching IPv6-only ALIAS is valid.
+    f.dns6.delete(hostname);
+    expect(await recheck()).toMatchObject({ status: "pending", external: { phase: "dns" } });
+    expect(fs.readFileSync(f.config.traefikConfigPath, "utf8")).not.toContain(hostname);
   });
 
   it("keeps established routing during a temporary DNS outage", async () => {

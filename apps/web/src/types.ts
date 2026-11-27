@@ -90,13 +90,14 @@ export interface AcmeRedirectPlan {
 export interface ExternalDomainDetails {
   phase: 'ownership' | 'dns' | 'certificate' | 'deployment' | 'active' | 'removing' | 'error';
   cnameTarget: string;
+  dnsMode?: 'cname' | 'apex';
   ownershipVerified: boolean;
   dnsReady: boolean;
   hostnameStatus: string;
   tlsStatus: string;
   lastCheckedAt: string | null;
   error: string | null;
-  records: Array<{ type: 'TXT' | 'CNAME'; name: string; value: string }>;
+  records: Array<{ type: 'TXT' | 'CNAME' | 'ALIAS'; name: string; value: string }>;
 }
 
 export interface Domain {
